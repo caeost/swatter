@@ -11,7 +11,7 @@ Right now this means a scrubber so you can go back and forth through the values 
 
 Later planning on trying to add some other features such as debugging inlining to roll in function calls etc. I also have a list of other things on my other computer but ~effort~.
 
-##to use
+###to use
 Open index.html paste some JS into the textarea, it will be evaluated and hopefully something will work, then use the slider to move through all the variable assignments. You can click on a variable in the assignment window to see its values throughout the program.
 
 ###caveats
@@ -20,3 +20,6 @@ Open index.html paste some JS into the textarea, it will be evaluated and hopefu
 3. It's not a debugger as such, its a variable viewer, so it will skip past lines with no seen assignments.
 4. Cause of the way I'm capturing variables (which i swear i have a reason for) the functions seen in the variable screen will have a buncha extra junk in them.
 5. probably a buncha other stuff.
+
+###Screencast
+The state as of 8/19/2014: http://screencast.com/t/XWpBYbSW
