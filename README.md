@@ -12,7 +12,7 @@ Right now this means a scrubber so you can go back and forth through the values 
 Later planning on trying to add some other features such as debugging inlining to roll in function calls etc. I also have a list of other things on my other computer but ~effort~.
 
 ##to use
-paste some JS into the textarea, it will be evaluated and hopefully something will work, then use the slider to move through all the variable assignments. You can click on a variable in the assignment window to see its values throughout the program.
+Open index.html paste some JS into the textarea, it will be evaluated and hopefully something will work, then use the slider to move through all the variable assignments. You can click on a variable in the assignment window to see its values throughout the program.
 
 ###caveats
 1. variables are currently tracked by name only, so same named values will be seen as same thing, should change this.
