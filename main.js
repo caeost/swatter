@@ -53,14 +53,8 @@
     } catch(e) {
       console.error(e);
     }
-  }
-  // this needs a few changes (As well as online above, and the html file)
-  //
-  // Once thats all working it would also be nice to have a data first view. 
-  // Being able to see all the lines where a variable changed value, and what
-  // changed about it. Adding syntax higlighting (highlight.js natch), and an editor would be 
-  // nice. The buttons should definitely be replaced by a scrubber. from there move onto
-  // the other desired features in my debugger checklist...
+  };
+
   exports.Processor = function(code) {
     var lines = code.split("\n"),
         copiedLines = _.clone(lines),

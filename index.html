@@ -24,6 +24,15 @@
       <input id="slider" type="range" value="0"/ >
       <pre><code><div id="variables"></div></code></pre>
       <div id="detailDisplay"></div>
+      <div id="templates">
+        <script type="underscore/tpl" id="detailTemplate">
+          <div class='name'><h3><%- name %></h3></div>
+          <% _.each(variables, function(variable) { %>
+            <div class='value javascript' data-line='<%- variable.lineNumber %>'><%- '@line ' + variable.lineNumber + ': ' + renderValue(variable.value) %></div>
+            <% }); %>
+          <div class='contextual'></div>
+        </script>
+      </div>
     </div>
 
     <!-- cdn stuff -->
@@ -33,7 +42,7 @@
     <script src="http://cdnjs.cloudflare.com/ajax/libs/highlight.js/8.1/highlight.min.js"></script>
     <script src="http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.6.0/underscore-min.js"></script>
     <script src="http://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.1.2/backbone-min.js"></script>
-    <!-- <script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script> -->
+    <script src="http://cdnjs.cloudflare.com/ajax/libs/d3/3.4.11/d3.js" charset="utf-8"></script>
     <!-- end of cdn stuff -->
 
     <script src="./node_modules/acorn/acorn.js"></script>

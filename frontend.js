@@ -26,9 +26,21 @@ $(function() {
       // show which line?
     },
     // highlight objects and functions
-    template: _.template("<div class='name'><h3><%- name %></h3></div><% _.each(values, function(object) { %><div class='value javascript' data-line='<%- object.lineNumber %>'><%- '@ line ' + object.lineNumber + ': ' + renderValue(object.value) %></div><% }); %>"),
-    render: function(name, values) {
-      this.$el.html(this.template({name: name, values: values, renderValue: renderValue}));
+    template: _.template($("#detailTemplate").text()),
+    render: function(name, variables) {
+      this.$el.html(this.template({name: name, variables: variables, renderValue: renderValue}));
+      var numberValues = _.chain(variables)
+                            .pluck("value")
+                            .filter(_.isNumber)
+                            .value();
+      if(numberValues.length) {
+        d3.select("#detailDisplay .contextual")
+          .selectAll("div")
+            .data(numberValues)
+          .enter().append("div")
+            .style("width", function(d) { return d * 10 + "px"; })
+            .text(function(d) { return d; });
+      }
     }
   });
 
@@ -94,11 +106,24 @@ $(function() {
       this.set("state", new Backbone.Model);
       this.set("values", new Backbone.Collection);
       this.on("change:index", function(model, line, options) {
+        var values = this.get("values");
+        var valueChunk = values.at(line);
+        var variables = _.clone(valueChunk.get("variables"));
+
+        // need to make sure state reflects all the things that have changed
+        var previous = this.previous("index");
+        if(previous > line) {
+          previous = 0;
+        }
+        var counter = line
+        while(previous <= --counter) {
+          _.defaults(variables, values.at(counter).get("variables"));
+        }
+
         if(!options || !options.slider) {
           $slider[0].value = line;
         }
-        var valueChunk = this.get("values").at(line);
-        this.get("state").set(valueChunk.get("variables"));
+        this.get("state").set(variables);
         this.set("selectedLine", valueChunk.get("lineNumber"));
       });
       this.on("change:processor", function(model, processor) {
