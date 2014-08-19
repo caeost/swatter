@@ -5,8 +5,17 @@
 })(function(exports) {
   
   var ForAssignment = function(assignmentsPerLine, node) {
-    var assigned = node.left;
-    if(!assigned.name) return;
+    var assigned;
+    switch(node.left.type) {
+      case "MemberExpression":
+        assigned = node.left.object;
+        break;
+      default:
+        assigned = node.left;
+    }
+
+    var name = assigned.name;
+    if(!name) return;
     var lineNumber = assigned.loc.end.line;
     assignmentsPerLine[lineNumber] || (assignmentsPerLine[lineNumber] = []);
     assignmentsPerLine[lineNumber].push(assigned.name);
@@ -21,6 +30,14 @@
       assignmentsPerLine[lineNumber] || (assignmentsPerLine[lineNumber] = []);
       assignmentsPerLine[lineNumber].push(declaration.name);
     }
+  };
+
+  var ForUpdate = function(assignmentsPerLine, node) {
+    var assigned = node.argument;
+    if(!assigned.name) return;
+    var lineNumber = assigned.loc.end.line;
+    assignmentsPerLine[lineNumber] || (assignmentsPerLine[lineNumber] = []);
+    assignmentsPerLine[lineNumber].push(assigned.name);
   };
 
   var produceValuesExtendString = function(lineNumber, assignments) {
@@ -65,10 +82,12 @@
   
     var forAssignment = _.partial(ForAssignment, assignmentsPerLine);
     var forDeclaration = _.partial(ForDeclaration, assignmentsPerLine);
+    var forUpdate = _.partial(ForUpdate, assignmentsPerLine);
 
     acorn.walk.simple(AST, {
       AssignmentExpression: forAssignment,
-      VariableDeclaration: forDeclaration
+      VariableDeclaration: forDeclaration,
+      UpdateExpression: forUpdate
     });
 
     _.each(assignmentsPerLine, function(variables, lineNumber) {
