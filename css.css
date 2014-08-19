@@ -1,0 +1,28 @@
+#InputArea.ViewMode #box {
+  display: none;
+}
+#InputArea #displayArea {
+  display: none;
+}
+#InputArea.ViewMode #displayArea {
+  display: block;
+}
+#InputArea.ViewMode #SubmitButton {
+  display: none;
+}
+#InputArea #EditButton {
+  display: none;
+}
+#InputArea.ViewMode #EditButton {
+  display: block;
+}
+.variable .name {
+  color: green;
+}
+.line.semi {
+  background: yellowgreen;
+}
+.line.active {
+  background: yellow;
+}
+

@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "acorn": "^0.7.0",
+    "underscore": "^1.6.0"
+  }
+}

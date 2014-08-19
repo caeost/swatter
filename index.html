@@ -1,0 +1,45 @@
+<html>
+  <head>
+    <title>Experiment in debugging</title>
+    <!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap-theme.min.css">
+    <link rel="stylesheet" href="http://cdnjs.cloudflare.com/ajax/libs/highlight.js/8.1/styles/default.min.css">
+
+
+    <link rel="stylesheet" href="./css.css">
+  </head>
+  <body>
+    <div class="container">
+      <h1>Scruba a dub!</h1>
+      <div id="InputArea" class="form-group">
+        <textarea id="box" class="form-control" rows="15"></textarea>
+        <div id="displayArea"></div>
+        <div>
+          <button id="SubmitButton" class="btn btn-default">Submit</button>
+          <button id="EditButton" class="btn btn-default">Edit</button>
+        </div>
+      </div>
+      <input id="slider" type="range" value="0"/ >
+      <pre><code><div id="variables"></div></code></pre>
+      <div id="detailDisplay"></div>
+    </div>
+
+    <!-- cdn stuff -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
+    <!-- <script src="http://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.14/require.js"></script> -->
+    <script src="http://cdnjs.cloudflare.com/ajax/libs/highlight.js/8.1/highlight.min.js"></script>
+    <script src="http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.6.0/underscore-min.js"></script>
+    <script src="http://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.1.2/backbone-min.js"></script>
+    <!-- <script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script> -->
+    <!-- end of cdn stuff -->
+
+    <script src="./node_modules/acorn/acorn.js"></script>
+    <script src="./node_modules/acorn/util/walk.js"></script>
+    <script src="./main.js"></script>
+    
+    <script src="./frontend.js"></script>
+  </body>
+</html>
