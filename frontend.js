@@ -3,9 +3,10 @@ $(function() {
   var $inputArea = $("#InputArea");
   var $slider = $("#slider");
 
+  // returns back an htmlized version of value for viewing
   var renderValue = function(value) {
     if(_.isObject(value)) {
-      return JSON.stringify(value);
+      return JSON.stringify(value, void 0, true);
     }
     return value;
   };
@@ -64,14 +65,14 @@ $(function() {
       var name = $this.text();
       var allValuesForName = this.collection.reduce(function(memo, model) {
         var value = model.get("variables")[name];
-        if(value) {
+        if(value !== void 0) {
           memo.push({value: value, lineNumber: model.get("lineNumber")});
         }
         return memo;
       }, []);
       this.trigger("nameClicked", name, allValuesForName);
     },
-    template: _.template("<% _.each(variables, function(value, name) { %><div class='variable'><span class='name'><%- name %></span>: <%- renderValue(value) %></div><% }); %>"),
+    template: _.template("<% _.each(variables, function(value, name) { %><div class='variable'><span class='name'><%- name %></span>: <%= renderValue(value) %></div><% }); %>"),
     render: function(data) {
       this.$el.html(this.template(data));
     }
@@ -109,21 +110,32 @@ $(function() {
         var values = this.get("values");
         var valueChunk = values.at(line);
         var variables = _.clone(valueChunk.get("variables"));
-
+       
         // need to make sure state reflects all the things that have changed
         var previous = this.previous("index");
         if(previous > line) {
           previous = 0;
         }
-        var counter = line
+        var counter = line - 1;
+        if(counter > 0) {
+          var previousVariables = values.at(counter).get("variables");
+          // this should really be done in a view somewhere
+          for(var key in variables) {
+            if(_.has(variables, key) && _.isString(variables[key]) && _.isString(previousVariables[key])) {
+              variables[key] = "<span class='nowrap'>" + diffString(previousVariables[key], variables[key]) + "</span>";
+            }
+          }
+          _.defaults(variables, previousVariables);
+        }
+        // can use just one _.defaults here as it can take arbitrary arguments
         while(previous <= --counter) {
           _.defaults(variables, values.at(counter).get("variables"));
         }
+        this.get("state").set(variables);
 
         if(!options || !options.slider) {
           $slider[0].value = line;
         }
-        this.get("state").set(variables);
         this.set("selectedLine", valueChunk.get("lineNumber"));
       });
       this.on("change:processor", function(model, processor) {

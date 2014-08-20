@@ -34,3 +34,15 @@
   color: white;
 }
 
+del {
+  background: #FFE6E6;
+}
+
+ins {
+  background: #E6FFE6;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+

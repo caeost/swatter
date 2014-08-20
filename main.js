@@ -52,6 +52,20 @@
   
     return "; __values.push({variables: { " + properties + "}, lineNumber: " + (lineNumber - 1) + "}); ";
   };
+
+  var LookupOriginalChunk = function(originalCode, start, end) {
+    var lines = originalCode.split("\n");
+    // lines are not 0 index
+    start.line--;
+    end.line--;
+    var chunk = [lines[start.line].substr(start.column)];
+    var counter = start.line + 1;
+    while(counter < end.line) {
+      chunk.push(lines[counter]);
+    }
+    chunk.push(lines[end.line].substr(0, end.column));
+    return chunk.join("\n");
+  };
   
   var processCode = function(__code, __values) {
     var __processRawValue = function(value) {
@@ -98,6 +112,14 @@
     var copiedCode = copiedLines.join("\n");
 
     processCode(copiedCode, values);
+
+    var alreadySeen = {};
+    values = _.map(values, function(value) {
+      var lineNumber = value.lineNumber;
+      var existing = alreadySeen[lineNumber] || 0;
+      alreadySeen[lineNumber] = value.lineRepeat = existing + 1;
+      return value;
+    });
 
     this.values = values;
     this.AST = AST;
