@@ -45,4 +45,10 @@ ins {
 .nowrap {
   white-space: nowrap;
 }
+.line-number {
+  margin-right: 5px;
+  color: blue;
+  width: 30px;
+  display: inline-block;
+}
 

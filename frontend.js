@@ -96,14 +96,10 @@ $(function() {
       var $target = $(e.target);
       this.model.set("index", $target.index() - 1);
     },
-    template: _.template("<pre class='code'><code class='javascript'><%= text %></code></pre>"),
+    template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i %></span><%= line %></span>\n<% }); %></code></pre>"),
     render: function() {
       var text = hljs.highlight("javascript", this.model.get("text")).value;
-      text = _.map(text.split("\n"), function(line) { 
-        return "<span class='line'>" + line + "</span>";
-      }).join("\n");
-
-      this.$el.html(this.template({text: text}));
+      this.$el.html(this.template({lines: text.split("\n")}));
     }
   });
 
