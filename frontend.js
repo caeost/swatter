@@ -9,7 +9,7 @@ $(function() {
       return JSON.stringify(value, void 0, true);
     // later need to use the actual backbone semantics for change but hey its v.0000001
     } else if(_.isString(value) && prevVariable && _.isString(prevVariable.value) && value !== prevVariable.value) {
-      return "<span class='nowrap'>" + diffString(prevVariable.value, value) + "</span>"
+      return diffString(prevVariable.value, value);
     }
     return value;
   };

@@ -28,15 +28,15 @@ function diffString( o, n ) {
 
   var oSpace = o.match(/\s+/g);
   if (oSpace == null) {
-    oSpace = ["\n"];
+    oSpace = [" "];
   } else {
-    oSpace.push("\n");
+    oSpace.push(" ");
   }
   var nSpace = n.match(/\s+/g);
   if (nSpace == null) {
-    nSpace = ["\n"];
+    nSpace = [" "];
   } else {
-    nSpace.push("\n");
+    nSpace.push(" ");
   }
 
   if (out.n.length == 0) {
