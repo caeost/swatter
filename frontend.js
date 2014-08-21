@@ -7,7 +7,8 @@ $(function() {
   var renderValue = function(value, variable, prevVariable) {
     if(_.isObject(value)) {
       return JSON.stringify(value, void 0, true);
-    } else if(_.isString(value) && prevVariable && _.isString(prevVariable.value)) {
+    // later need to use the actual backbone semantics for change but hey its v.0000001
+    } else if(_.isString(value) && prevVariable && _.isString(prevVariable.value) && value !== prevVariable.value) {
       return "<span class='nowrap'>" + diffString(prevVariable.value, value) + "</span>"
     }
     return value;
@@ -95,17 +96,14 @@ $(function() {
       var $target = $(e.target);
       this.model.set("index", $target.index() - 1);
     },
-    template: _.template("<pre class='code'><code class='javascript'><%- text %></code></pre>"),
+    template: _.template("<pre class='code'><code class='javascript'><%= text %></code></pre>"),
     render: function() {
-      this.$el.html(this.template({text: this.model.get("text")}));
-
-      // messy shouldn't need to render before highlight js maybe
-      var $code = this.$("code");
-      hljs.highlightBlock($code[0]);
-      var linedUp = _.map($code.html().split("\n"), function(line) { 
+      var text = hljs.highlight("javascript", this.model.get("text")).value;
+      text = _.map(text.split("\n"), function(line) { 
         return "<span class='line'>" + line + "</span>";
-      });
-      $code.html(linedUp.join("\n"));
+      }).join("\n");
+
+      this.$el.html(this.template({text: text}));
     }
   });
 
@@ -115,9 +113,13 @@ $(function() {
       this.set("previousState", new Backbone.Model);
 
       // these are not really "previous" in terms of backbone as they can be skipped over so this..
+      // could be made so if we wanted to set them before, but doesnt seem worth it right now
       this.get("state").previousState = this.get("previousState");
 
       this.set("values", new Backbone.Collection);
+
+      // index is the main control mechanism for looking through the code,
+      // it corresponds to which variable change is going on
       this.on("change:index", function(model, line, options) {
         var values = this.get("values");
         var valueChunk = values.at(line);
@@ -149,6 +151,9 @@ $(function() {
       });
       this.on("change:processor", function(model, processor) {
         this.get("values").reset(processor.values);
+      });
+      this.listenTo(this.get("values"), "reset", function() {
+        
       });
     }
   });

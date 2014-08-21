@@ -16,9 +16,9 @@
 
     var name = assigned.name;
     if(!name) return;
-    var lineNumber = assigned.loc.end.line;
+    var lineNumber = node.loc.end.line;
     assignmentsPerLine[lineNumber] || (assignmentsPerLine[lineNumber] = []);
-    assignmentsPerLine[lineNumber].push({name: assigned.name, loc: assigned.loc});
+    assignmentsPerLine[lineNumber].push({name: assigned.name, loc: node.right.loc});
   };
   
   var ForDeclaration = function(assignmentsPerLine, node) {
