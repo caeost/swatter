@@ -18,17 +18,17 @@
     if(!name) return;
     var lineNumber = assigned.loc.end.line;
     assignmentsPerLine[lineNumber] || (assignmentsPerLine[lineNumber] = []);
-    assignmentsPerLine[lineNumber].push(assigned.name);
+    assignmentsPerLine[lineNumber].push({name: assigned.name, loc: assigned.loc});
   };
   
   var ForDeclaration = function(assignmentsPerLine, node) {
     var declarations = node.declarations;
     for(var i = 0, len = declarations.length; i < len; i++) {
-      var declaration = declarations[i].id;
-      if(!declaration.name) continue;
+      var declaration = declarations[i];
+      if(!declaration.id.name) continue;
       var lineNumber = node.loc.end.line;
       assignmentsPerLine[lineNumber] || (assignmentsPerLine[lineNumber] = []);
-      assignmentsPerLine[lineNumber].push(declaration.name);
+      assignmentsPerLine[lineNumber].push({name: declaration.id.name, loc: declaration.init.loc});
     }
   };
 
@@ -37,42 +37,43 @@
     if(!assigned.name) return;
     var lineNumber = assigned.loc.end.line;
     assignmentsPerLine[lineNumber] || (assignmentsPerLine[lineNumber] = []);
-    assignmentsPerLine[lineNumber].push(assigned.name);
+    assignmentsPerLine[lineNumber].push({name: assigned.name, loc: assigned.loc});
   };
 
-  var produceValuesExtendString = function(lineNumber, assignments) {
-    var length = assignments.length;
-    var properties = _.reduce(assignments, function(memo, name, index) {
-      var save = (name + ": " + "__processRawValue(" + name + ")");
-      if(index < (length - 1)) {
-        save += ", ";
-      }
-      return memo + save;
-    }, "")
-  
-    return "; __values.push({variables: { " + properties + "}, lineNumber: " + (lineNumber - 1) + "}); ";
+  var produceValuesExtendString = function(lineNumber, variables) {
+    var length = variables.length,
+        properties = [];
+    for(var i = 0; i < length; i++) {
+      var name = variables[i].name;
+      var loc = JSON.stringify(variables[i].loc);
+      properties.push(name + ": {value: __processRawValue(" + name + ", " + loc + "), loc:" + loc + "}"); 
+    }
+    return "; __values.push({variables: { " + properties.join(", ") + "}, zeroedLineNumber: " + (lineNumber - 1) + "}); ";
   };
 
-  var LookupOriginalChunk = function(originalCode, start, end) {
-    var lines = originalCode.split("\n");
+  var LookupOriginalChunk = function(originalCode, loc) {
+    var start = loc.start,
+        end = loc.end,
+        lines = originalCode.split("\n");
+
     // lines are not 0 index
     start.line--;
     end.line--;
     var chunk = [lines[start.line].substr(start.column)];
-    var counter = start.line + 1;
-    while(counter < end.line) {
+    var counter = start.line;
+    while(++counter < end.line) {
       chunk.push(lines[counter]);
     }
     chunk.push(lines[end.line].substr(0, end.column));
     return chunk.join("\n");
   };
   
-  var processCode = function(__code, __values) {
-    var __processRawValue = function(value) {
+  var processCode = function(__code, __values, __originalCode) {
+    var __processRawValue = function(value, loc) {
       // this is getting the function after its been marked up
       // need to get back the original function value..
       if(_.isFunction(value)) {
-        return value.toString();
+        return LookupOriginalChunk(__originalCode, loc);
       } else if(_.isObject(value)) {
         return _.clone(value);
       } else {
@@ -111,11 +112,11 @@
 
     var copiedCode = copiedLines.join("\n");
 
-    processCode(copiedCode, values);
+    processCode(copiedCode, values, code);
 
     var alreadySeen = {};
     values = _.map(values, function(value) {
-      var lineNumber = value.lineNumber;
+      var lineNumber = value.zeroedLineNumber;
       var existing = alreadySeen[lineNumber] || 0;
       alreadySeen[lineNumber] = value.lineRepeat = existing + 1;
       return value;
@@ -127,6 +128,7 @@
     this.assignmentsPerLine = assignmentsPerLine;
     this.transformedCode = copiedCode;
     this.originalCode = code;
+    this.lookupOriginalChunk = _.partial(LookupOriginalChunk, code);
   };
 });
 
