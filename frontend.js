@@ -3,24 +3,32 @@ $(function() {
   var $inputArea = $("#InputArea");
   var $slider = $("#slider");
 
+  var stringifyTransformer = function(censor) {
+    return function(key, value) {
+      if(typeof(censor) === 'object' && typeof(value) == 'object' && censor == value) {
+        return '[Circular]';
+      }
+      return _.isFunction(value) ? value.toString() : value;
+    };
+  };
+
   // returns back an htmlized version of value for viewing
   var renderValue = function(value, variable, prevVariable) {
     var result = value;
     if(_.isFunction(value)) {
-      result = value.toString();
+      result = hljs.highlight("javascript", value.toString()).value;
     } else if(_.isObject(value)) {
-      result = JSON.stringify(value, void 0, true);
-    }
-    if(_.isString(result)) {
-      result = result.replace(AnalyzeCode.extendStringRegex, "");
-      if(prevVariable) {
-        var renderedPrevious = renderValue(prevVariable.value, prevVariable);
-        // later need to use the actual backbone semantics for change but hey its v.0000001
-        if(_.isString(renderedPrevious) && renderedPrevious !== result) {
-          result = diffString(renderedPrevious, result);
-        }
+      result = JSON.stringify(value, stringifyTransformer(value), "\t");
+    } else if(_.isString(result) && prevVariable) {
+      var renderedPrevious = renderValue(prevVariable.value, prevVariable);
+      // later need to use the actual backbone semantics for change but hey its v.0000001
+      if(_.isString(renderedPrevious) && renderedPrevious !== result) {
+        result = diffString(renderedPrevious, result);
       }
     } 
+    if(_.isString(result)) {
+      result = result.replace(AnalyzeCode.extendStringRegex, "");
+    }
     return result;
   };
 
@@ -62,15 +70,13 @@ $(function() {
     initialize: function(options) {
       options || (options = {});
       if(options.model) {
-        this.listenTo(options.model, "change", function(model) {
-          var attributes = model.toJSON();
-          this.render({variables: attributes, renderValue: renderValue, previousModel: model.previousState});
-        });
+        this.listenTo(options.model, "change", this.render);
       }
       this.collection = options.collection;
     },
     events: {
-      "click .name": "clickName"
+      "click .name": "clickName",
+      "change #variableFilter": "filterVariables"
     },
     clickName: function(e) {
       var $this = $(e.target);
@@ -84,9 +90,34 @@ $(function() {
       }, []);
       this.trigger("nameClicked", name, allValuesForName);
     },
-    template: _.template("<% _.each(variables, function(variable, name) { %><div class='variable'><span class='name'><%- name %></span>: <%= renderValue(variable.value, variable, previousModel.get(name)) %></div><% }); %>"),
-    render: function(data) {
-      this.$el.html(this.template(data));
+    filterVariables: function(e) {
+      var filter = this.$("#variableFilter").val();
+      this.filter = new RegExp(filter);
+      this.filterText = filter;
+      this.render();
+    },
+    template: _.template("<input type='text' id='variableFilter' value='<%- filterText %>'/><% _.each(variables, function(variable, name) { %><div class='variable'><span class='name'><%- name %></span>: <span class='value'><%= renderValue(variable.value, variable, previousModel.get(name)) %></span></div><% }); %>"),
+    render: function() {
+      var model = this.model;
+
+      var variables = model.toJSON();
+      var filter = this.filter;
+      if(filter) {
+        variables = _.reduce(variables, function(memo, value, key) {
+          if(filter.test(key)) {
+            memo[key] = value;
+          }
+          return memo;
+        }, {});
+      }
+
+      var filterText = this.filterText;
+      this.$el.html(this.template({
+        renderValue: renderValue,
+        previousModel: model.previousState,
+        variables: variables,
+        filterText: filterText
+      }));
     }
   });
 
@@ -113,6 +144,20 @@ $(function() {
     }
   });
 
+  var CodeCSSView = Backbone.View.extend({
+    initialize: function(options) {
+      if(options.model) {
+        this.listenTo(options.model, "change:text", this.render);
+      }
+    },
+    tagName: "style",
+    template: _.template(" .line-number { width: <%- lineWidth %>px;}"),
+    render: function() {
+      var lineWidth = (this.model.get("processor").length + "").length * 10;
+      this.$el.html(this.template({lineWidth: lineWidth}));
+    }
+  });
+
   var Model = Backbone.Model.extend({
     initialize: function() {
       this.set("state", new Backbone.Model);
@@ -129,12 +174,14 @@ $(function() {
       this.on("change:index", function(model, line, options) {
         var values = this.get("values");
         var valueChunk = values.at(line);
+        if(!valueChunk) debugger;
         var variables = _.clone(valueChunk.get("variables"));
        
         // need to make sure state reflects all the things that have changed
         var previous = this.previous("index");
         if(previous > line) {
           this.get("state").clear();
+          this.get("previousState").clear();
           previous = 0;
         }
         var counter = line - 1;
@@ -167,6 +214,7 @@ $(function() {
   var model = window.model = new Model(); 
   var variableView = new VariableView({model: model.get("state"), collection: model.get("values"), el: variables});
   var codeView = new CodeView({el: $inputArea.find("#displayArea"), model: model});
+  var codeCSSView = new CodeCSSView({el: $("#CodeCSSView"), model: model});
   var detailView = new DetailView({el: $("#detailDisplay"), eventSource: variableView});
 
   $("#SubmitButton").click(function() {
@@ -188,7 +236,7 @@ $(function() {
     $inputArea.removeClass("ViewMode");
   });
 
-  $slider.change(function() {
+  $slider.on("input change", function() {
     var value = +$(this).val();
     model.set("index", value, {slider: true});
   });

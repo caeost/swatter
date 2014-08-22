@@ -28,7 +28,7 @@
       if(!declaration.id.name) continue;
       var lineNumber = node.loc.end.line;
       assignmentsPerLine[lineNumber] || (assignmentsPerLine[lineNumber] = []);
-      assignmentsPerLine[lineNumber].push({name: declaration.id.name, loc: declaration.init.loc});
+      assignmentsPerLine[lineNumber].push({name: declaration.id.name, loc: declaration.loc});
     }
   };
 
@@ -112,7 +112,7 @@
 
     var copiedCode = copiedLines.join("\n");
 
-    processCode(copiedCode, values, code);
+    processCode(copiedCode, values, code, this);
 
     var alreadySeen = {};
     values = _.map(values, function(value) {

@@ -48,7 +48,7 @@ ins {
 .line-number {
   margin-right: 5px;
   color: blue;
-  width: 30px;
   display: inline-block;
+  border-right: 1px solid black;
 }
 
