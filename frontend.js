@@ -5,13 +5,23 @@ $(function() {
 
   // returns back an htmlized version of value for viewing
   var renderValue = function(value, variable, prevVariable) {
-    if(_.isObject(value)) {
-      return JSON.stringify(value, void 0, true);
-    // later need to use the actual backbone semantics for change but hey its v.0000001
-    } else if(_.isString(value) && prevVariable && _.isString(prevVariable.value) && value !== prevVariable.value) {
-      return diffString(prevVariable.value, value);
+    var result = value;
+    if(_.isFunction(value)) {
+      result = value.toString();
+    } else if(_.isObject(value)) {
+      result = JSON.stringify(value, void 0, true);
     }
-    return value;
+    if(_.isString(result)) {
+      result = result.replace(AnalyzeCode.extendStringRegex, "");
+      if(prevVariable) {
+        var renderedPrevious = renderValue(prevVariable.value, prevVariable);
+        // later need to use the actual backbone semantics for change but hey its v.0000001
+        if(_.isString(renderedPrevious) && renderedPrevious !== result) {
+          result = diffString(renderedPrevious, result);
+        }
+      }
+    } 
+    return result;
   };
 
   var DetailView = Backbone.View.extend({
@@ -96,7 +106,7 @@ $(function() {
       var $target = $(e.target);
       this.model.set("index", $target.index() - 1);
     },
-    template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i %></span><%= line %></span>\n<% }); %></code></pre>"),
+    template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i + 1 %></span><%= line %></span>\n<% }); %></code></pre>"),
     render: function() {
       var text = hljs.highlight("javascript", this.model.get("text")).value;
       this.$el.html(this.template({lines: text.split("\n")}));

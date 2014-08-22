@@ -40,6 +40,8 @@
     assignmentsPerLine[lineNumber].push({name: assigned.name, loc: assigned.loc});
   };
 
+  exports.extendStringRegex = /; __values.push\({variables: {.*}\); /g;
+
   var produceValuesExtendString = function(lineNumber, variables) {
     var length = variables.length,
         properties = [];
@@ -51,7 +53,7 @@
     return "; __values.push({variables: { " + properties.join(", ") + "}, zeroedLineNumber: " + (lineNumber - 1) + "}); ";
   };
 
-  var LookupOriginalChunk = function(originalCode, loc) {
+  var LookupOriginalChunk = exports.LookupOriginalChunk = function(originalCode, loc) {
     var start = loc.start,
         end = loc.end,
         lines = originalCode.split("\n");
@@ -72,9 +74,7 @@
     var __processRawValue = function(value, loc) {
       // this is getting the function after its been marked up
       // need to get back the original function value..
-      if(_.isFunction(value)) {
-        return LookupOriginalChunk(__originalCode, loc);
-      } else if(_.isObject(value)) {
+      if(!_.isFunction(value) && _.isObject(value)) {
         return _.clone(value);
       } else {
         return value;
