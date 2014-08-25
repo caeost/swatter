@@ -5,7 +5,8 @@ $(function() {
 
   var stringifyTransformer = function(censor) {
     return function(key, value) {
-      if(typeof(censor) === 'object' && typeof(value) == 'object' && censor == value) {
+      if(typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
+        if(_.isEmpty(value)) return value;
         return '[Circular]';
       }
       return _.isFunction(value) ? value.toString() : value;
@@ -122,10 +123,15 @@ $(function() {
   });
 
   var CodeView = Backbone.View.extend({
+    height: 700,
     initialize: function(options) {
       if(options.model) {
         this.listenTo(options.model, "change:selectedLine", function(model, line) {
-          this.$(".line").removeClass("active").eq(line).addClass("active");
+          var $lines = this.$(".line").removeClass("active");
+          var $line = $lines.eq(line).addClass("active");
+
+          var $pre = this.$("pre");
+          $pre.scrollTop($pre.scrollTop() + ($line.offset().top - (this.height / 2)));
         });
         this.listenTo(options.model, "change:text", this.render);
       }

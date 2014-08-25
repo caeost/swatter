@@ -52,3 +52,7 @@ ins {
   border-right: 1px solid black;
 }
 
+#displayArea pre {
+  height: 700px;
+}
+
