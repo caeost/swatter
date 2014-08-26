@@ -14,7 +14,7 @@ $(function() {
   };
 
   // returns back an htmlized version of value for viewing
-  var renderValue = function(value, variable, prevVariable) {
+  var renderValue = function(value, prevVariable) {
     var result = value;
     if(_.isFunction(value)) {
       result = hljs.highlight("javascript", value.toString()).value;
@@ -28,7 +28,7 @@ $(function() {
       }
     } 
     if(_.isString(result)) {
-      result = result.replace(AnalyzeCode.extendStringRegex, "");
+      result = result.replace(AnalyzeCode.valuesStringRegex, "");
     }
     return result;
   };
@@ -52,10 +52,8 @@ $(function() {
     template: _.template($("#detailTemplate").text()),
     render: function(name, variables) {
       this.$el.html(this.template({name: name, variables: variables, renderValue: renderValue}));
-      var numberValues = _.chain(variables)
-                            .pluck("value")
-                            .filter(_.isNumber)
-                            .value();
+      var numberValues = _.filter(variables, _.isNumber);
+
       if(numberValues.length) {
         d3.select("#detailDisplay .contextual")
           .selectAll("div")
@@ -85,7 +83,7 @@ $(function() {
       var allValuesForName = this.collection.reduce(function(memo, model) {
         var variable = model.get("variables")[name];
         if(variable !== void 0) {
-          memo.push({value: variable.value, lineNumber: model.get("zeroedLineNumber")});
+          memo.push({value: variable, lineNumber: model.get("zeroedLineNumber")});
         }
         return memo;
       }, []);
@@ -97,7 +95,7 @@ $(function() {
       this.filterText = filter;
       this.render();
     },
-    template: _.template("<input type='text' id='variableFilter' value='<%- filterText %>'/><% _.each(variables, function(variable, name) { %><div class='variable'><span class='name'><%- name %></span>: <span class='value'><%= renderValue(variable.value, variable, previousModel.get(name)) %></span></div><% }); %>"),
+    template: _.template("<input type='text' id='variableFilter' value='<%- filterText %>'/><% _.each(variables, function(value, name) { %><div class='variable'><span class='name'><%- name %></span>: <span class='value'><%= renderValue(value, previousModel.get(name)) %></span></div><% }); %>"),
     render: function() {
       var model = this.model;
 
@@ -140,8 +138,6 @@ $(function() {
       "click .line": "clickLine"
     },
     clickLine: function(e) {
-      var $target = $(e.target);
-      this.model.set("index", $target.index() - 1);
     },
     template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i + 1 %></span><%= line %></span>\n<% }); %></code></pre>"),
     render: function() {

@@ -28,7 +28,7 @@
         <script type="underscore/tpl" id="detailTemplate">
           <div class='name'><h3><%- name %></h3></div>
           <% _.each(variables, function(variable) { %>
-            <div class='value javascript' data-line='<%- variable.lineNumber %>'><%- '@line ' + variable.lineNumber + ': ' + renderValue(variable.value) %></div>
+            <div class='value javascript' data-line='<%- variable.lineNumber %>'><%= '@line ' + variable.lineNumber + ': ' + renderValue(variable.value) %></div>
             <% }); %>
           <div class='contextual'></div>
         </script>
@@ -41,6 +41,11 @@
     <!-- <script src="http://cdnjs.cloudflare.com/ajax/libs/require.js/2.1.14/require.js"></script> -->
     <script src="http://cdnjs.cloudflare.com/ajax/libs/highlight.js/8.1/highlight.min.js"></script>
     <script src="http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.6.0/underscore-min.js"></script>
+    <!-- annoying but i dont want to write my own deep clone -->
+    <script src="http://cdnjs.cloudflare.com/ajax/libs/lodash.js/2.4.1/lodash.min.js"></script>
+    <script type="text/javascript">
+      var lodash = _.noConflict();
+    </script>
     <script src="http://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.1.2/backbone-min.js"></script>
     <script src="http://cdnjs.cloudflare.com/ajax/libs/d3/3.4.11/d3.js" charset="utf-8"></script>
     <!-- end of cdn stuff -->
