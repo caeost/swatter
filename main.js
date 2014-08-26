@@ -48,20 +48,6 @@
   };
 
   // utility
-  var offsets = {};
-  var wrap = function(string, start, end, template, config) {
-    _.extend(config, {contents: contents});
-    var contents = string.slice(start, end),
-        templated = _.template(template, config);
-
-    offsets[start] = templated.length - contents.length;
-    return string.substring(0, start) + templated + string.substring(end);
-  };
-
-  var append = function(string, index, template, config) {
-    return wrap(string, index, index, template, config);
-  };
-
   var constructObjectReference = function(node) {
     var string = "";
     if(node.object.type == "MemberExpression") {
@@ -89,15 +75,23 @@
   // templates
   var callTemplate = "(__processCall(<%= (lineNumber - 1) %>,\"<%=  name %>\",<%= contents %>))";
 
-  var valuesTemplate = ";__processValue(<%= JSON.stringify(lodash.zipObject(names, names)) %>, <%= lineNumber - 1 %>);";
+  var valuesZip = function(names) {
+    names = _.map(names, function(name) {
+      return name + ":" + name;
+    });
+    return names.join(",");
+  };
+  var valuesTemplate = ";__processValue({<%= valuesZip(names, names) %>}, <%= lineNumber - 1 %>);";
   exports.valuesStringRegex = /;__processValue\(.*\);/g;
 
-
-  exports.Processor = function(code) {
+  // entry point into functionality, "new" to use
+  var Processor = exports.Processor = function(code) {
     var copiedCode = code,
         values = [],
         nodes = [];
   
+    this.offsets = [];
+
     var AST = acorn.parse(code, {locations: true});
 
     var save = function(node) {
@@ -116,8 +110,8 @@
 
     _.each(callOrNot[0], function(node) {
       var templateConfig = {name: node.callee.name, lineNumber: node.loc.start.line};
-      copiedCode = wrap(copiedCode, node.start, node.end, callTemplate, templateConfig);
-    });
+      copiedCode = this.wrap(copiedCode, node.start, node.end, callTemplate, templateConfig);
+    }, this);
 
     var nodesOnLines = _.chain(callOrNot[1])
       .map(function(node) {
@@ -156,13 +150,13 @@
       // not all too pretty..
       var end = Math.max.apply(this, pluck(array, "node.end"));
       var names = _.compact(Array.prototype.concat.apply(_.pluck(array, "name"), _.pluck(array, "names")));
-      debugger;
       var config = {
         names: names,
-        lineNumber: lineNumber
+        lineNumber: lineNumber,
+        valuesZip: valuesZip
       };
-      copiedCode = append(copiedCode, end, valuesTemplate, config);
-    });
+      copiedCode = this.append(copiedCode, end, valuesTemplate, config);
+    }, this);
 
     // this needs to be moved into a web worker or something to not pollute and conflict
     processCode(copiedCode, values, code, this);
@@ -181,5 +175,25 @@
     this.originalCode = code;
     this.lookupOriginalChunk = _.partial(LookupOriginalChunk, code);
   };
+
+  _.extend(Processor.prototype, {
+    wrap: function(string, start, end, template, config) {
+      _.extend(config, {contents: contents});
+      var pre = this.offsets.slice(0, start + 1);
+      if(pre.length) {
+        var startOffset = _.reduce(pre, function(memo, value){ return memo + value});
+        start = start + startOffset;
+        end = end + startOffset;
+      }
+      var contents = string.slice(start, end),
+          templated = _.template(template, config);
+  
+      this.offsets[start] = (this.offsets[start] || 0) + templated.length - contents.length;
+      return string.substring(0, start) + templated + string.substring(end);
+    },
+    append: function(string, index, template, config) {
+      return this.wrap(string, index, index, template, config);
+    }
+  });
 });
 
