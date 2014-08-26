@@ -130,5 +130,6 @@
     this.originalCode = code;
     this.lookupOriginalChunk = _.partial(LookupOriginalChunk, code);
   };
+
 });
 

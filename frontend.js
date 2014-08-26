@@ -173,6 +173,7 @@ $(function() {
       // could be made so if we wanted to set them before, but doesnt seem worth it right now
       this.get("state").previousState = this.get("previousState");
 
+      // should use line number as id attribute
       this.set("values", new Backbone.Collection);
 
       // index is the main control mechanism for looking through the code,
@@ -222,6 +223,43 @@ $(function() {
   var codeView = new CodeView({el: $inputArea.find("#displayArea"), model: model});
   var codeCSSView = new CodeCSSView({el: $("#CodeCSSView"), model: model});
   var detailView = new DetailView({el: $("#detailDisplay"), eventSource: variableView});
+
+  // very basic at this point, makes a bunch of assumptions
+  var renderVariableValues = function(text, values) {
+    var wrap = function(string, start, end, template, config) {
+      start = start + offset;
+      end = end + offset;
+      var contents = string.slice(start, end),
+          templated = _.template(template, _.extend({contents: contents}, config));
+    
+      offset += templated.length - contents.length;
+      return string.substring(0, start) + templated + string.substring(end);
+    };
+    var lookupLast = function(lineNumber, name) {
+      var possible = values.filter(function(model) { return model.get("zeroedLineNumber") < (lineNumber - 1)}).reverse();
+      var i = 0;
+      while(i < possible.length) {
+        var model = possible[i];
+        var variable = model.get("variables")[name];
+        if(variable) return variable.value;
+        i++;
+      }
+      return "ERROR";
+    };
+
+    var copy = text,
+        list = [],
+        offset = 0;
+
+    acorn.walk.simple(acorn.parse(text, {locations: true}), {Identifier: function(node) { list.push(node)}});
+
+    _.each(list, function(val) {
+      copy = wrap(copy, val.start, val.end, "{<%= contents %> = <%= lookupLast(val.loc.start.line, contents) %>}", {lookupLast: lookupLast, val: val});
+    });
+    
+    return copy;
+  }
+
 
   $("#SubmitButton").click(function() {
     $inputArea.addClass("ViewMode");
