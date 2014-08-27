@@ -119,7 +119,7 @@
         switch(node.type) {
           case "AssignmentExpression":
             if(node.left.type == "MemberExpression") {
-              names = [constructObjectReference(node.left)];
+              names = [node.left.object.name];
             } else {
               names = [node.left.name];
             }
@@ -179,11 +179,11 @@
 
   _.extend(Processor.prototype, {
     wrap: function(string, start, end, template, config) {
-      _.extend(config, {contents: contents});
+      ;
       var fixedStart = this.fixPosition(start);
       var fixedEnd = this.fixPosition(end);
       var contents = string.slice(fixedStart, fixedEnd),
-          templated = _.template(template, config);
+          templated = _.template(template, _.extend({contents: contents}, config));
   
       this.offsets[start] = (this.offsets[start] || 0) + templated.length - contents.length;
       return string.substring(0, fixedStart) + templated + string.substring(fixedEnd);
@@ -196,7 +196,7 @@
       if(offsets.length) {
         var offset = _.reduce(offsets, function(memo, val) {
           return memo += val;
-        });
+        },0);
         return line + offset;
       } else {
         return line;
