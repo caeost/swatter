@@ -77,7 +77,7 @@
 
   var valuesZip = function(names) {
     names = _.map(names, function(name) {
-      return name + ":" + name;
+      return "\"" + name + "\":" + name;
     });
     return names.join(",");
   };
@@ -149,7 +149,7 @@
     _.each(nodesOnLines, function(array, lineNumber) {
       // not all too pretty..
       var end = Math.max.apply(this, pluck(array, "node.end"));
-      var names = _.compact(Array.prototype.concat.apply(_.pluck(array, "name"), _.pluck(array, "names")));
+      var names = Array.prototype.concat.apply([], _.pluck(array, "names"));
       var config = {
         names: names,
         lineNumber: lineNumber,
@@ -170,6 +170,7 @@
     });
 
     this.values = values;
+    this.length = code.split("\n").length;
     this.AST = AST;
     this.transformedCode = copiedCode;
     this.originalCode = code;
@@ -179,20 +180,27 @@
   _.extend(Processor.prototype, {
     wrap: function(string, start, end, template, config) {
       _.extend(config, {contents: contents});
-      var pre = this.offsets.slice(0, start + 1);
-      if(pre.length) {
-        var startOffset = _.reduce(pre, function(memo, value){ return memo + value});
-        start = start + startOffset;
-        end = end + startOffset;
-      }
-      var contents = string.slice(start, end),
+      var fixedStart = this.fixPosition(start);
+      var fixedEnd = this.fixPosition(end);
+      var contents = string.slice(fixedStart, fixedEnd),
           templated = _.template(template, config);
   
       this.offsets[start] = (this.offsets[start] || 0) + templated.length - contents.length;
-      return string.substring(0, start) + templated + string.substring(end);
+      return string.substring(0, fixedStart) + templated + string.substring(fixedEnd);
     },
     append: function(string, index, template, config) {
       return this.wrap(string, index, index, template, config);
+    },
+    fixPosition: function(line) {
+      var offsets = this.offsets.slice(0, line +1);
+      if(offsets.length) {
+        var offset = _.reduce(offsets, function(memo, val) {
+          return memo += val;
+        });
+        return line + offset;
+      } else {
+        return line;
+      }
     }
   });
 });
