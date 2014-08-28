@@ -5,8 +5,7 @@ $(function() {
 
   var stringifyTransformer = function(censor) {
     return function(key, value) {
-      if(typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
-        if(_.isEmpty(value)) return value;
+      if(key && typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
         return '[Circular]';
       }
       return _.isFunction(value) ? value.toString() : value;
@@ -171,45 +170,85 @@ $(function() {
 
       this.set("values", new Backbone.Collection);
 
+      var createObject = function(chunk) {
+        var obj = {};
+        obj[chunk.get("name")] = chunk.get("value");
+        return obj;
+      };
+
       // index is the main control mechanism for looking through the code,
       // it corresponds to which variable change is going on
-      this.on("change:index", function(model, line, options) {
+      this.on("change:index", function(model, index, options) {
         var values = this.get("values");
-        var valueChunk = values.at(line);
-        if(!valueChunk) debugger;
-        var variables = _.clone(valueChunk.get("variables"));
-       
+        var valueChunk = values.at(index);
+        var variables = createObject(valueChunk);
+        
         // need to make sure state reflects all the things that have changed
         var previous = this.previous("index");
-        if(previous > line) {
-          this.get("state").clear();
-          this.get("previousState").clear();
-          previous = 0;
-        }
-        var counter = line - 1;
+        this.get("state").clear();
+        this.get("previousState").clear();
+
+        var counter = index - 1;
         var previousVariables;
         if(counter >= 0) {
-          previousVariables = values.at(counter).get("variables");
+          previousVariables = createObject(values.at(counter));
           _.defaults(variables, previousVariables);
         }
+        // note: previous state is not line based so changing multiple things in one line
+        // will make it appear to ignore changes on earlier lines
         this.get("previousState").set(previousVariables || {});
-        // can use just one _.defaults here as it can take arbitrary arguments
-        while(previous <= --counter) {
-          _.defaults(variables, values.at(counter).get("variables"));
+        // sucks to have to do all of this everytime, should optmiize later
+        while(--counter >= 0) {
+          _.defaults(variables, createObject(values.at(counter)));
         }
-        this.get("state").set(variables);
+        // this is a little dirty right now but hey
+        var inScope = this.lookupVariables(valueChunk.get("start"));
+        this.get("state").set(_.pick(variables, _.keys(inScope)));
         
         if(!options || !options.slider) {
-          $slider[0].value = line;
+          $slider[0].value = index;
         }
-        this.set("selectedLine", valueChunk.get("zeroedLineNumber"));
+        this.set("selectedLine", this.lookupLine(valueChunk.get("start")) - 1);
       });
+      
       this.on("change:processor", function(model, processor) {
         this.get("values").reset(processor.values);
+        this.set("functions", processor.nodes.functions);
+        this.set("nodes", processor.nodes.nodes);
+        this.set("scope", processor.scope);
+        this.set("linePositions", processor.linePositions);
       });
-      this.listenTo(this.get("values"), "reset", function() {
-        
-      });
+    },
+    lookupVariables: function(position) {
+      var func = _.chain(this.get("functions"))
+        .filter(function(node) {
+          return node.start <= position && node.end > position;
+        })
+        .sortBy("start")
+        .first()
+        .value();
+      
+      var variables = {};
+      var state = func ? func.state : this.get("scope");
+      while(state != null) {
+        _.defaults(variables, state.variables);
+        state = state.parent;
+      }
+      return variables;
+    },
+    lookupLine: function(position) {
+      var positions = this.get("linePositions");
+      var line = -1;
+      var index = 0;
+      while(position >= index) {
+        line++;
+        index = positions[line];
+      }
+      return line;
+    },
+    lookupVariablesByLine: function(lineNumber) {
+      var position = this.get("linePositions")[lineNumber];
+      return this.lookupVariables(position);
     }
   });
 

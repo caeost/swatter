@@ -21,17 +21,16 @@
     return chunk.join("\n");
   };
   
-  var processCode = function(__code, __values, __originalCode) {
-    var __processValue = function(valueObject, lineNumber) {
-      var variables = _.reduce(valueObject, function(memo, value, name) {
-        if(!_.isFunction(value) && _.isObject(value)) {
-          memo[name] = lodash.cloneDeep(value);
-        } else {
-          memo[name] = value;
-        }
-        return memo;
-      }, {});
-      __values.push({zeroedLineNumber: lineNumber, variables: variables, type: "values"});
+  var processCode = function(__code, __values) {
+    var __processValue = function(name, value, start, end) {
+      // this looks kinda weird but its because stuff like i++ return different value then what i actually is
+      var evaled = eval(name);
+      value = evaled === void 0 ? value : evaled;
+      if(!_.isFunction(value) && _.isObject(value)) {
+        value = lodash.cloneDeep(value);
+      }
+      __values.push({name: name, value: value, type: "values", start: start, end: end});
+      return value;
     };
     var __processCall = function(lineNumber, name, result) {
       var variables = {};
@@ -73,119 +72,162 @@
 
 
   // templates
-  var callTemplate = "(__processCall(<%= (lineNumber - 1) %>,\"<%=  name %>\",<%= contents %>))";
+  var callTemplate = "__processCall(<%= (lineNumber - 1) %>,\"<%=  name %>\",<%= contents %>)";
 
-  var valuesZip = function(names) {
-    names = _.map(names, function(name) {
-      return "\"" + name + "\":" + name;
-    });
-    return names.join(",");
+  var valuesTemplate = "__processValue(\"<%= name %>\",( <%= contents %>), <%= start %>, <%= end %>)";
+  exports.valuesStringRegex = /__processValue\(.*,\( (.*)\),.*\)/g;
+
+  // node processing
+  var processAssignment = function(node) {
+    var name;
+    if(node.left.type == "MemberExpression") {
+      name = node.left.object.name;
+    } else {
+      name = node.left.name;
+    }
+    return {
+      node: node,
+      name: name
+    }
   };
-  var valuesTemplate = ";__processValue({<%= valuesZip(names, names) %>}, <%= lineNumber - 1 %>);";
-  exports.valuesStringRegex = /;__processValue\(.*\);/g;
+  var processDeclaration = function(node) {
+    return {
+      name: node.id.name,
+      node: node.init
+    }
+  };
+  var processUpdate = function(node) {
+    return {
+      name: node.argument.name,
+      node: node
+    }
+  };
 
   // entry point into functionality, "new" to use
   var Processor = exports.Processor = function(code) {
     var copiedCode = code,
         values = [],
-        nodes = [];
+        nodes = [],
+        calls = [],
+        functions = [];
   
     this.offsets = [];
 
     var AST = acorn.parse(code, {locations: true});
 
-    var save = function(node) {
-      nodes.push(node);
-    };
+    var global = {variables: [], children: [], parent: null};
 
-    acorn.walk.simple(AST, {
-      AssignmentExpression: save,
-      VariableDeclaration: save,
-      UpdateExpression: save,
-      CallExpression: save
+    acorn.walk.recursive(AST, global, {
+      FunctionExpression: function(node, state, c) { 
+        var newstate = {
+          variables: {},
+          children: [],
+          parent: state
+        };
+        state.children.push(newstate);
+        node.state = newstate;
+        functions.push(node);
+        c(node.body, newstate);
+      },
+      VariableDeclaration: function(node, state, c) {
+        _.each(node.declarations, function(node) {
+          var processed = processDeclaration(node);
+          state.variables[processed.name] = node;
+          node.gid = _.uniqueId("var");
+          nodes.push(processed);
+
+          c(node.id, state);
+          c(node.init, state);
+        });
+      },
+      AssignmentExpression: function(node, state, c) {
+        nodes.push(processAssignment(node));
+        c(node.left, state);
+        c(node.right, state);
+      },
+      UpdateExpression: function(node, state, c) {
+        nodes.push(processUpdate(node));
+        c(node.argument, state);
+      },
+      CallExpression: function(node) {
+        calls.push(node);
+      }
     });
 
-    var isCall = _.matches({type: "CallExpression"});
-    var callOrNot = _.partition(nodes, isCall);
-
-    _.each(callOrNot[0], function(node) {
+    _.each(calls, function(node) {
       var templateConfig = {name: node.callee.name, lineNumber: node.loc.start.line};
       copiedCode = this.wrap(copiedCode, node.start, node.end, callTemplate, templateConfig);
     }, this);
 
-    var nodesOnLines = _.chain(callOrNot[1])
-      .map(function(node) {
-        var name, names, lineNumber;
-        switch(node.type) {
-          case "AssignmentExpression":
-            if(node.left.type == "MemberExpression") {
-              names = [node.left.object.name];
-            } else {
-              names = [node.left.name];
-            }
-            lineNumber = node.loc.end.line;
-            break;
-          case "VariableDeclaration":
-            names = pluck(node.declarations, "id.name");
-            lineNumber = node.loc.end.line;
-            break;
-          case "UpdateExpression":
-            names = [node.argument.name];
-            lineNumber = node.argument.loc.end.line;
-            break;
-          default:
-            debugger;
-            return null;
-        }
-        return {
-          lineNumber: lineNumber,
-          names: names,
-          node: node
-        }
+    _.chain(nodes)
+      // i think this should require less offset juggling... will see what performance trade off is
+      .sortBy(function(node) {
+        return -node.start;
       })
-      .groupBy("lineNumber")
-      .value();
-
-    _.each(nodesOnLines, function(array, lineNumber) {
-      // not all too pretty..
-      var end = Math.max.apply(this, pluck(array, "node.end"));
-      var names = Array.prototype.concat.apply([], _.pluck(array, "names"));
-      var config = {
-        names: names,
-        lineNumber: lineNumber,
-        valuesZip: valuesZip
-      };
-      copiedCode = this.append(copiedCode, end, valuesTemplate, config);
-    }, this);
+      .each(function(object) {
+        var start = object.node.start;
+        var end = object.node.end;
+        var config = {
+          start: start,
+          end: end,
+          name: object.name
+        };
+        copiedCode = this.wrap(copiedCode, start, end, valuesTemplate, config);
+      }, this);
 
     // this needs to be moved into a web worker or something to not pollute and conflict
-    processCode(copiedCode, values, code, this);
+    processCode(copiedCode, values);
 
     var alreadySeen = {};
     values = _.map(values, function(value) {
-      var lineNumber = value.zeroedLineNumber;
-      var existing = alreadySeen[lineNumber] || 0;
-      alreadySeen[lineNumber] = value.lineRepeat = existing + 1;
+      var start = value.start;
+      var existing = alreadySeen[start] || 0;
+      alreadySeen[start] = value.repeat = existing + 1;
       return value;
     });
 
+    var linePositions = [0];
+    var length = 1;
+    var last = 0;
+    while(true) {
+      var index = code.indexOf("\n", last) + 1;
+      if(index == 0) break;
+      linePositions.push(index);
+      last = index;
+      length++;
+    }
+
     this.values = values;
-    this.length = code.split("\n").length;
+    this.linePositions = linePositions;
+    this.length = length;
     this.AST = AST;
     this.transformedCode = copiedCode;
     this.originalCode = code;
     this.lookupOriginalChunk = _.partial(LookupOriginalChunk, code);
+    this.scope = global;
+    this.nodes = {
+      nodes: nodes,
+      calls: calls,
+      functions: functions
+    };
   };
 
   _.extend(Processor.prototype, {
     wrap: function(string, start, end, template, config) {
-      ;
       var fixedStart = this.fixPosition(start);
       var fixedEnd = this.fixPosition(end);
       var contents = string.slice(fixedStart, fixedEnd),
           templated = _.template(template, _.extend({contents: contents}, config));
+    
+      // ugh
+      var index = templated.indexOf(contents);
+      if(!!~index) {
+        this.offsets[start] = (this.offsets[start] || 0) + index;
+        this.offsets[end] = (this.offsets[start] || 0) + templated.length - (index + contents.length);
+      } else {
+        this.offsets[start] = (this.offsets[start] || 0) + templated.length - contents.length;
+      }
   
-      this.offsets[start] = (this.offsets[start] || 0) + templated.length - contents.length;
       return string.substring(0, fixedStart) + templated + string.substring(fixedEnd);
     },
     append: function(string, index, template, config) {
