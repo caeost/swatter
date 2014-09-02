@@ -74,8 +74,8 @@
   // templates
   var callTemplate = "__processCall(<%= (lineNumber - 1) %>,\"<%=  name %>\",<%= contents %>)";
 
-  var valuesTemplate = "__processValue(\"<%= name %>\",( <%= contents %>), <%= start %>, <%= end %>)";
-  exports.valuesStringRegex = /__processValue\(.*,\( (.*)\),.*\)/g;
+  var valuesTemplate = "__processValue(\"<%= name %>\",(<%= contents %>), <%= start %>, <%= end %>)";
+  exports.valuesStringRegex = /__processValue\(.*,\((.*)\),.*\)/g;
 
   // node processing
   var processAssignment = function(node) {
@@ -161,9 +161,7 @@
 
     _.chain(nodes)
       // i think this should require less offset juggling... will see what performance trade off is
-      .sortBy(function(node) {
-        return -node.start;
-      })
+      .sortBy("start")
       .each(function(object) {
         var start = object.node.start;
         var end = object.node.end;

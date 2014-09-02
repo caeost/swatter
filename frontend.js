@@ -16,7 +16,7 @@ $(function() {
   var renderValue = function(value, prevVariable) {
     var result = value;
     if(_.isFunction(value)) {
-      result = hljs.highlight("javascript", value.toString()).value;
+      result = value.toString().replace(AnalyzeCode.valuesStringRegex, "$1");
     } else if(_.isObject(value)) {
       result = JSON.stringify(value, stringifyTransformer(value), "\t");
     } else if(_.isString(result) && prevVariable) {
@@ -27,7 +27,7 @@ $(function() {
       }
     } 
     if(_.isString(result)) {
-      result = result.replace(AnalyzeCode.valuesStringRegex, "");
+      result = hljs.highlight("javascript", result).value;
     }
     return result;
   };
