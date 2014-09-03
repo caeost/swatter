@@ -22,8 +22,8 @@
     return chunk.join("\n");
   };
   
-  var processCode = function(__code, __values) {
-    var __processValue = function(object , index) {
+  var processCode = function(code, values) {
+    var processValue = function(object, index) {
       var processed = {
         type: "value",
         index: index
@@ -37,17 +37,14 @@
         return memo;
       }, {});
 
-      __values.push(processed);
-    };
-    var __processCall = function(lineNumber, name, result) {
-      var variables = {};
-      variables[name] = result;
-      __values.push({variables: variables, zeroedLineNumber: lineNumber, type: "call"});
-      return result;
+      values.push(processed);
     };
 
+    var func = new Function("__processValue", code);
+    func = _.bind(func, {});
+
     try {
-      eval(__code);
+      func(processValue);
     } catch(e) {
       console.error(e);
     }
