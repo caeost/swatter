@@ -16,9 +16,8 @@ Open index.html paste some JS into the textarea, it will be evaluated and hopefu
 
 ###caveats
 1. variables are currently tracked by name only, so same named values will be seen as same thing, should change this.
-2. it only cares about variable assignment and declarations, so more specialized ways of changing values are currently not captured.
+2. it only cares about variable assignment and declarations, so more specialized ways of changing values are probably not captured.
 3. It's not a debugger as such, its a variable viewer, so it will skip past lines with no seen assignments.
-4. Cause of the way I'm capturing variables (which i swear i have a reason for) the functions seen in the variable screen will have a buncha extra junk in them.
 5. probably a buncha other stuff.
 
 ###Screencast
