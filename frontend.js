@@ -5,19 +5,18 @@ $(function() {
 
   var stringifyTransformer = function(censor) {
     return function(key, value) {
-      if(typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
-        if(_.isEmpty(value)) return value;
+      if(key && typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
         return '[Circular]';
       }
-      return _.isFunction(value) ? value.toString() : value;
+      return _.isFunction(value) ? value.toString().replace(AnalyzeCode.valuesStringRegex, "") : value;
     };
   };
 
   // returns back an htmlized version of value for viewing
-  var renderValue = function(value, variable, prevVariable) {
+  var renderValue = function(value, prevVariable) {
     var result = value;
     if(_.isFunction(value)) {
-      result = hljs.highlight("javascript", value.toString()).value;
+      result = value.toString().replace(AnalyzeCode.valuesStringRegex, "");
     } else if(_.isObject(value)) {
       result = JSON.stringify(value, stringifyTransformer(value), "\t");
     } else if(_.isString(result) && prevVariable) {
@@ -28,7 +27,7 @@ $(function() {
       }
     } 
     if(_.isString(result)) {
-      result = result.replace(AnalyzeCode.extendStringRegex, "");
+      result = hljs.highlight("javascript", result).value;
     }
     return result;
   };
@@ -56,6 +55,7 @@ $(function() {
                             .pluck("value")
                             .filter(_.isNumber)
                             .value();
+
       if(numberValues.length) {
         d3.select("#detailDisplay .contextual")
           .selectAll("div")
@@ -73,7 +73,6 @@ $(function() {
       if(options.model) {
         this.listenTo(options.model, "change", this.render);
       }
-      this.collection = options.collection;
     },
     events: {
       "click .name": "clickName",
@@ -83,9 +82,9 @@ $(function() {
       var $this = $(e.target);
       var name = $this.text();
       var allValuesForName = this.collection.reduce(function(memo, model) {
-        var variable = model.get("variables")[name];
-        if(variable !== void 0) {
-          memo.push({value: variable.value, lineNumber: model.get("zeroedLineNumber")});
+        var value = model.get("values")[name];
+        if(value !== void 0) {
+          memo.push({value: value, lineNumber: model.get("zeroedLineNumber")});
         }
         return memo;
       }, []);
@@ -97,7 +96,7 @@ $(function() {
       this.filterText = filter;
       this.render();
     },
-    template: _.template("<input type='text' id='variableFilter' value='<%- filterText %>'/><% _.each(variables, function(variable, name) { %><div class='variable'><span class='name'><%- name %></span>: <span class='value'><%= renderValue(variable.value, variable, previousModel.get(name)) %></span></div><% }); %>"),
+    template: _.template($("#variableTemplate").text()),
     render: function() {
       var model = this.model;
 
@@ -140,8 +139,6 @@ $(function() {
       "click .line": "clickLine"
     },
     clickLine: function(e) {
-      var $target = $(e.target);
-      this.model.set("index", $target.index() - 1);
     },
     template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i + 1 %></span><%= line %></span>\n<% }); %></code></pre>"),
     render: function() {
@@ -167,54 +164,71 @@ $(function() {
   var Model = Backbone.Model.extend({
     initialize: function() {
       this.set("state", new Backbone.Model);
-      this.set("previousState", new Backbone.Model);
-
-      // these are not really "previous" in terms of backbone as they can be skipped over so this..
-      // could be made so if we wanted to set them before, but doesnt seem worth it right now
-      this.get("state").previousState = this.get("previousState");
 
       // should use line number as id attribute
       this.set("values", new Backbone.Collection);
 
       // index is the main control mechanism for looking through the code,
       // it corresponds to which variable change is going on
-      this.on("change:index", function(model, line, options) {
+      this.on("change:index", function(model, index, options) {
         var values = this.get("values");
-        var valueChunk = values.at(line);
-        if(!valueChunk) debugger;
-        var variables = _.clone(valueChunk.get("variables"));
-       
-        // need to make sure state reflects all the things that have changed
-        var previous = this.previous("index");
-        if(previous > line) {
-          this.get("state").clear();
-          this.get("previousState").clear();
-          previous = 0;
-        }
-        var counter = line - 1;
-        var previousVariables;
-        if(counter >= 0) {
-          previousVariables = values.at(counter).get("variables");
-          _.defaults(variables, previousVariables);
-        }
-        this.get("previousState").set(previousVariables || {});
-        // can use just one _.defaults here as it can take arbitrary arguments
-        while(previous <= --counter) {
-          _.defaults(variables, values.at(counter).get("variables"));
-        }
-        this.get("state").set(variables);
+        var valueModel = values.at(index);
+        var position = valueModel.get("index");
+        var variables = {};
         
+        this.get("state").clear();
+
+        var counter = 0;
+        while(counter <= index) {
+          _.extend(variables, values.at(counter).get("values"));
+          counter++;
+        }
+        // this is a little dirty right now but hey
+        var inScope = this.lookupVariables(position);
+        this.get("state").set(_.pick(variables, _.keys(inScope)));
+        
+        // todo: make slider view and move this there
         if(!options || !options.slider) {
-          $slider[0].value = line;
+          $slider[0].value = index;
         }
-        this.set("selectedLine", valueChunk.get("zeroedLineNumber"));
+        this.set("selectedLine", this.lookupLine(position) - 1);
       });
+      
       this.on("change:processor", function(model, processor) {
+        this.get("state").clear();
         this.get("values").reset(processor.values);
+        this.set("scope", processor.scope);
+        this.set("linePositions", processor.linePositions);
+        this.set("text", processor.originalCode);
+        this.set("index", -1, {silent: true});
+        this.set("index", 0);
       });
-      this.listenTo(this.get("values"), "reset", function() {
-        
-      });
+    },
+    lookupVariables: function(position) {
+      var variables = {},
+          scope = this.get("scope");
+      while (scope) {
+        _.extend(variables, scope.variables);
+        scope = _.find(scope.children, function(scope) {
+          return scope.start <= position && scope.end > position;
+        });
+      }
+
+      return variables;
+    },
+    lookupLine: function(position) {
+      var positions = this.get("linePositions");
+      var line = -1;
+      var index = 0;
+      while(position >= index) {
+        line++;
+        index = positions[line];
+      }
+      return line;
+    },
+    lookupVariablesByLine: function(lineNumber) {
+      var position = this.get("linePositions")[lineNumber];
+      return this.lookupVariables(position);
     }
   });
 
@@ -267,13 +281,9 @@ $(function() {
     var text = $inputArea.find("#box").val();
 
     var processor = new AnalyzeCode.Processor(text);
-    
     model.set("processor", processor);
-    model.set("text", text);
 
     $slider.prop("max", processor.values.length - 1);
-    
-    model.set("index", 0);
   });
 
   $("#EditButton").click(function() {
