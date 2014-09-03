@@ -8,7 +8,7 @@ $(function() {
       if(key && typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
         return '[Circular]';
       }
-      return _.isFunction(value) ? value.toString() : value;
+      return _.isFunction(value) ? value.toString().replace(AnalyzeCode.valuesStringRegex, "") : value;
     };
   };
 
@@ -16,7 +16,7 @@ $(function() {
   var renderValue = function(value, prevVariable) {
     var result = value;
     if(_.isFunction(value)) {
-      result = value.toString().replace(AnalyzeCode.valuesStringRegex, "$1");
+      result = value.toString().replace(AnalyzeCode.valuesStringRegex, "");
     } else if(_.isObject(value)) {
       result = JSON.stringify(value, stringifyTransformer(value), "\t");
     } else if(_.isString(result) && prevVariable) {
@@ -51,7 +51,10 @@ $(function() {
     template: _.template($("#detailTemplate").text()),
     render: function(name, variables) {
       this.$el.html(this.template({name: name, variables: variables, renderValue: renderValue}));
-      var numberValues = _.filter(variables, _.isNumber);
+      var numberValues = _.chain(variables)
+                            .pluck("value")
+                            .filter(_.isNumber)
+                            .value();
 
       if(numberValues.length) {
         d3.select("#detailDisplay .contextual")
@@ -70,7 +73,6 @@ $(function() {
       if(options.model) {
         this.listenTo(options.model, "change", this.render);
       }
-      this.collection = options.collection;
     },
     events: {
       "click .name": "clickName",
@@ -80,9 +82,9 @@ $(function() {
       var $this = $(e.target);
       var name = $this.text();
       var allValuesForName = this.collection.reduce(function(memo, model) {
-        var variable = model.get("variables")[name];
-        if(variable !== void 0) {
-          memo.push({value: variable, lineNumber: model.get("zeroedLineNumber")});
+        var value = model.get("values")[name];
+        if(value !== void 0) {
+          memo.push({value: value, lineNumber: model.get("zeroedLineNumber")});
         }
         return memo;
       }, []);
@@ -94,7 +96,7 @@ $(function() {
       this.filterText = filter;
       this.render();
     },
-    template: _.template("<input type='text' id='variableFilter' value='<%- filterText %>'/><% _.each(variables, function(value, name) { %><div class='variable'><span class='name'><%- name %></span>: <span class='value'><%= renderValue(value, previousModel.get(name)) %></span></div><% }); %>"),
+    template: _.template($("#variableTemplate").text()),
     render: function() {
       var model = this.model;
 
@@ -162,78 +164,55 @@ $(function() {
   var Model = Backbone.Model.extend({
     initialize: function() {
       this.set("state", new Backbone.Model);
-      this.set("previousState", new Backbone.Model);
-
-      // these are not really "previous" in terms of backbone as they can be skipped over so this..
-      // could be made so if we wanted to set them before, but doesnt seem worth it right now
-      this.get("state").previousState = this.get("previousState");
 
       this.set("values", new Backbone.Collection);
-
-      var createObject = function(chunk) {
-        var obj = {};
-        obj[chunk.get("name")] = chunk.get("value");
-        return obj;
-      };
 
       // index is the main control mechanism for looking through the code,
       // it corresponds to which variable change is going on
       this.on("change:index", function(model, index, options) {
         var values = this.get("values");
-        var valueChunk = values.at(index);
-        var variables = createObject(valueChunk);
+        var valueModel = values.at(index);
+        var position = valueModel.get("index");
+        var variables = {};
         
-        // need to make sure state reflects all the things that have changed
-        var previous = this.previous("index");
         this.get("state").clear();
-        this.get("previousState").clear();
 
-        var counter = index - 1;
-        var previousVariables;
-        if(counter >= 0) {
-          previousVariables = createObject(values.at(counter));
-          _.defaults(variables, previousVariables);
-        }
-        // note: previous state is not line based so changing multiple things in one line
-        // will make it appear to ignore changes on earlier lines
-        this.get("previousState").set(previousVariables || {});
-        // sucks to have to do all of this everytime, should optmiize later
-        while(--counter >= 0) {
-          _.defaults(variables, createObject(values.at(counter)));
+        var counter = 0;
+        while(counter <= index) {
+          _.extend(variables, values.at(counter).get("values"));
+          counter++;
         }
         // this is a little dirty right now but hey
-        var inScope = this.lookupVariables(valueChunk.get("start"));
+        var inScope = this.lookupVariables(position);
         this.get("state").set(_.pick(variables, _.keys(inScope)));
         
+        // todo: make slider view and move this there
         if(!options || !options.slider) {
           $slider[0].value = index;
         }
-        this.set("selectedLine", this.lookupLine(valueChunk.get("start")) - 1);
+        this.set("selectedLine", this.lookupLine(position) - 1);
       });
       
       this.on("change:processor", function(model, processor) {
+        this.get("state").clear();
         this.get("values").reset(processor.values);
-        this.set("functions", processor.nodes.functions);
-        this.set("nodes", processor.nodes.nodes);
         this.set("scope", processor.scope);
         this.set("linePositions", processor.linePositions);
+        this.set("text", processor.originalCode);
+        this.set("index", -1, {silent: true});
+        this.set("index", 0);
       });
     },
     lookupVariables: function(position) {
-      var func = _.chain(this.get("functions"))
-        .filter(function(node) {
-          return node.start <= position && node.end > position;
-        })
-        .sortBy("start")
-        .first()
-        .value();
-      
-      var variables = {};
-      var state = func ? func.state : this.get("scope");
-      while(state != null) {
-        _.defaults(variables, state.variables);
-        state = state.parent;
+      var variables = {},
+          scope = this.get("scope");
+      while (scope) {
+        _.extend(variables, scope.variables);
+        scope = _.find(scope.children, function(scope) {
+          return scope.start <= position && scope.end > position;
+        });
       }
+
       return variables;
     },
     lookupLine: function(position) {
@@ -264,13 +243,9 @@ $(function() {
     var text = $inputArea.find("#box").val();
 
     var processor = new AnalyzeCode.Processor(text);
-    
     model.set("processor", processor);
-    model.set("text", text);
 
     $slider.prop("max", processor.values.length - 1);
-    
-    model.set("index", 0);
   });
 
   $("#EditButton").click(function() {

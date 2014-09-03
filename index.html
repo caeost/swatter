@@ -22,15 +22,24 @@
         </div>
       </div>
       <input id="slider" type="range" value="0"/ >
-      <pre><code><div id="variables"></div></code></pre>
+      <div id="variables"></div>
       <div id="detailDisplay"></div>
       <div id="templates">
         <script type="underscore/tpl" id="detailTemplate">
           <div class='name'><h3><%- name %></h3></div>
           <% _.each(variables, function(variable) { %>
-            <div class='value javascript' data-line='<%- variable.lineNumber %>'><%= '@line ' + variable.lineNumber + ': ' + renderValue(variable.value) %></div>
+            <div class='value javascript' data-line='<%- variable.zeroedLineNumber %>'><%= '@line ' + variable.lineNumber + ': ' + renderValue(variable.value) %></div>
             <% }); %>
           <div class='contextual'></div>
+        </script>
+
+        <script type="underscore/tpl" id="variableTemplate">
+          <input type='text' id='variableFilter' value='<%- filterText %>'/>
+          <% _.each(variables, function(value, name) { %>
+            <div class='variable'>
+              <pre><code><span class='name'><%- name %></span>: <span class='value'><%= renderValue(value, model.previous(name)) %></span></code></pre>
+            </div>
+          <% }); %>
         </script>
       </div>
     </div>
