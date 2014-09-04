@@ -5,24 +5,8 @@
   mod(this.AnalyzeCode = {}); // Plain browser env
 })(function(exports) {
 
-  var LookupOriginalChunk = exports.LookupOriginalChunk = function(originalCode, loc) {
-    var start = loc.start,
-        end = loc.end,
-        lines = originalCode.split("\n");
+  var processCode = function(code, values, calls) {
 
-    // lines are not 0 index
-    start.line--;
-    end.line--;
-    var chunk = [lines[start.line].substr(start.column)];
-    var counter = start.line;
-    while(++counter < end.line) {
-      chunk.push(lines[counter]);
-    }
-    chunk.push(lines[end.line].substr(0, end.column));
-    return chunk.join("\n");
-  };
-  
-  var processCode = function(code, values) {
     var processValue = function(object, index) {
       var processed = {
         type: "value",
@@ -40,11 +24,15 @@
       values.push(processed);
     };
 
-    var func = new Function("__processValue", code);
-    func = _.bind(func, {});
+    var processCall = function(name, func, index) {
+      calls.push({name: name, func: func, index: index});
+    };
 
     try {
-      func(processValue);
+      var func = new Function("__processValue", "__processCall", code);
+      func = _.bind(func, {});
+
+      func(processValue, processCall);
     } catch(e) {
       console.error(e);
     }
@@ -76,16 +64,19 @@
 
 
   // templates
-  var callTemplate = "__processCall(<%= (lineNumber - 1) %>,\"<%=  name %>\",<%= contents %>)";
+  var callTemplate = _.template(";__processCall(\"<%=  name %>\",<%= name %>, <%= index %>);");
+  exports.callStringRegex = /;__processCall\(.*\);/
 
-  var valuesTemplate = ";__processValue(<%= stringified %>, <%= index %>);";
+  var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= index %>);");
   exports.valuesStringRegex = /;__processValue\(.*\);/g;
+
+  var wrapperTemplate = _.template("<span class='<%= type %>'><%= contents %></span>");
 
   // node processing
   var processAssignment = function(node) {
     var name;
     if(node.left.type == "MemberExpression") {
-      name = node.left.object.name;
+      name = node.left.object.name || "this";
     } else {
       name = node.left.name;
     }
@@ -110,15 +101,23 @@
   // entry point into functionality, "new" to use
   var Processor = exports.Processor = function(code) {
     var copiedCode = code,
-        values = [];
+        renderedCode = code,
+        values = [],
+        calls = [],
+        wrap = new Wrap(),
+        renderWrap = new Wrap();
   
-    this.offsets = [];
-
     var AST = acorn.parse(code, {locations: true});
 
     var base = {children: [], expressions: [], variables: {}, parent: null, start: 0, end: code.length};
 
-    var append = _.bind(function(index, object) {
+    var append = function(index, object, template) {
+      object || (object = {});
+      _.extend(object, {index: index});
+      copiedCode = wrap.append(copiedCode, index, template, object);
+    };
+
+    var appendValue = function(index, object) {
       var stringified = "";
       if(!_.isObject(object)) {
         var name = object;
@@ -129,8 +128,13 @@
         return key + ":" + key;
       });
       stringified = "{" + keys.join(",") + "}";
-      copiedCode = this.append(copiedCode, index, valuesTemplate, {stringified: stringified, index: index});
-    }, this);
+      append(index, {stringified: stringified}, valuesTemplate);
+    };
+
+    // testing
+    var htmlize = function(node) {
+      renderedCode = renderWrap.wrap(renderedCode, node.start, node.end, wrapperTemplate,{type: node.type});
+    };
 
     acorn.walk.recursive(AST, base, {
       FunctionExpression: function(node, state, c) {
@@ -142,6 +146,11 @@
           start: node.start,
           end: node.end
         };
+
+        _.each(node.params, function(node) {
+          newstate.variables[node.name] = node;
+        });
+
         state.children.push(newstate);
         node.state = newstate;
         c(node.body, newstate);
@@ -156,27 +165,40 @@
           state.variables[node.id.name] = node;
 
           c(node.id, state);
-          c(node.init, state);
+          if(node.init) c(node.init, state);
         });
-        append(node.end, processed.declarations);
+        appendValue(node.end, processed.declarations);
+        htmlize(node);
       },
       AssignmentExpression: function(node, state, c) {
+        // todo: need to track undeclared variables as they become globals
         var assignment = processAssignment(node);
         state.expressions.push(assignment);
-        append(node.end, assignment.name);
+        appendValue(node.end, assignment.name);
+        htmlize(node);
         c(node.left, state);
         c(node.right, state);
       },
       UpdateExpression: function(node, state, c) {
         var update = processUpdate(node);
-        append(node.end, update.name);
+        appendValue(node.end, update.name);
         state.expressions.push(update);
+        htmlize(node);
         c(node.argument, state);
+      },
+      CallExpression: function(node, state, c) {
+        var object = {
+          name: node.callee.name,
+          index: node.end
+        };
+        append(node.end, object, callTemplate);
+        htmlize(node);
+        c(node.callee, state);
       }
     });
 
     // this needs to be moved into a web worker or something to not pollute and conflict
-    processCode(copiedCode, values);
+    processCode(copiedCode, values, calls);
 
     var alreadySeen = {};
     values = _.map(values, function(value) {
@@ -198,26 +220,31 @@
     }
 
     this.values = values;
+    this.calls = calls;
     this.linePositions = linePositions;
     this.length = length;
     this.AST = AST;
     this.transformedCode = copiedCode;
-    this.originalCode = code;
-    this.lookupOriginalChunk = _.partial(LookupOriginalChunk, code);
+    this.code = code;
+    this.renderedCode = renderedCode;
     this.scope = base;
   };
 
-  _.extend(Processor.prototype, {
+  var Wrap = function() {
+    this.offsets = [];
+  };
+
+  _.extend(Wrap.prototype, {
     wrap: function(string, start, end, template, config) {
       var fixedStart = this.fixPosition(start);
       var fixedEnd = this.fixPosition(end);
       var contents = string.slice(fixedStart, fixedEnd),
-          templated = _.template(template, _.extend({contents: contents}, config));
+          templated = template(_.extend({contents: contents}, config));
 
       var index = templated.indexOf(contents);
       if(!!~index) {
         this.offsets[start] = (this.offsets[start] || 0) + index;
-        this.offsets[end] = (this.offsets[start] || 0) + templated.length - (index + contents.length);
+        this.offsets[end] = (this.offsets[end] || 0) + templated.length - (index + contents.length);
       } else {
         this.offsets[start] = (this.offsets[start] || 0) + templated.length - contents.length;
       }

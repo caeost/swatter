@@ -13,20 +13,20 @@ $(function() {
   };
 
   // returns back an htmlized version of value for viewing
-  var renderValue = function(value, prevVariable) {
+  var renderValue = function(value, prevVariable, raw) {
     var result = value;
     if(_.isFunction(value)) {
       result = value.toString().replace(AnalyzeCode.valuesStringRegex, "");
     } else if(_.isObject(value)) {
       result = JSON.stringify(value, stringifyTransformer(value), "\t");
-    } else if(_.isString(result) && prevVariable) {
-      var renderedPrevious = renderValue(prevVariable.value, prevVariable);
+    } else if(_.isString(value) && prevVariable) {
+      var renderedPrevious = renderValue(prevVariable.value);
       // later need to use the actual backbone semantics for change but hey its v.0000001
       if(_.isString(renderedPrevious) && renderedPrevious !== result) {
         result = diffString(renderedPrevious, result);
       }
     } 
-    if(_.isString(result)) {
+    if(!raw && _.isString(result)) {
       result = hljs.highlight("javascript", result).value;
     }
     return result;
@@ -113,8 +113,8 @@ $(function() {
 
       var filterText = this.filterText;
       this.$el.html(this.template({
+        model: model,
         renderValue: renderValue,
-        previousModel: model.previousState,
         variables: variables,
         filterText: filterText
       }));
@@ -132,7 +132,7 @@ $(function() {
           var $pre = this.$("pre");
           $pre.scrollTop($pre.scrollTop() + ($line.offset().top - (this.height / 2)));
         });
-        this.listenTo(options.model, "change:text", this.render);
+        this.listenTo(options.model, "change:rendered", this.render);
       }
     },
     events: {
@@ -142,15 +142,15 @@ $(function() {
     },
     template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i + 1 %></span><%= line %></span>\n<% }); %></code></pre>"),
     render: function() {
-      var text = hljs.highlight("javascript", this.model.get("text")).value;
-      this.$el.html(this.template({lines: text.split("\n")}));
+      this.$el.html(this.template({lines: this.model.get("rendered").split("\n")}));
+      hljs.initHighlighting();
     }
   });
 
   var CodeCSSView = Backbone.View.extend({
     initialize: function(options) {
       if(options.model) {
-        this.listenTo(options.model, "change:text", this.render);
+        this.listenTo(options.model, "change:rendered", this.render);
       }
     },
     tagName: "style",
@@ -199,7 +199,8 @@ $(function() {
         this.get("values").reset(processor.values);
         this.set("scope", processor.scope);
         this.set("linePositions", processor.linePositions);
-        this.set("text", processor.originalCode);
+        this.set("text", processor.code);
+        this.set("rendered", processor.renderedCode);
         this.set("index", -1, {silent: true});
         this.set("index", 0);
       });
@@ -249,13 +250,13 @@ $(function() {
       offset += templated.length - contents.length;
       return string.substring(0, start) + templated + string.substring(end);
     };
-    var lookupLast = function(lineNumber, name) {
-      var possible = values.filter(function(model) { return model.get("zeroedLineNumber") < (lineNumber - 1)}).reverse();
+    var lookupLast = function(position, name) {
+      var possible = values.filter(function(model) { return model.get("index") < (position - 1)}).reverse();
       var i = 0;
       while(i < possible.length) {
         var model = possible[i];
-        var variable = model.get("variables")[name];
-        if(variable) return variable.value;
+        var variable = model.get("values")[name];
+        if(variable) return renderValue(variable, false, true);
         i++;
       }
       return "ERROR";
@@ -265,14 +266,28 @@ $(function() {
         list = [],
         offset = 0;
 
-    acorn.walk.simple(acorn.parse(text, {locations: true}), {Identifier: function(node) { list.push(node)}});
+    acorn.walk.recursive(acorn.parse(text), false, {
+      AssignmentExpression: function(node, state, c) { 
+        c(node.right, true);
+      },
+      UpdateExpression: function(node, state, c) {
+        c(node.argument, true);
+      },
+      Identifier: function(node, state, c) {
+        if(state) {
+          list.push(node);
+        }
+      }
+    });
 
     _.each(list, function(val) {
-      copy = wrap(copy, val.start, val.end, "{<%= contents %> = <%= lookupLast(val.loc.start.line, contents) %>}", {lookupLast: lookupLast, val: val});
+      copy = wrap(copy, val.start, val.end, "{<%= lookupLast(val.start, contents) %>}", {lookupLast: lookupLast, val: val});
     });
     
     return copy;
-  }
+  };
+
+  window.renderVariableValues = renderVariableValues;
 
 
   $("#SubmitButton").click(function() {
