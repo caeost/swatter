@@ -28,7 +28,7 @@
         <script type="underscore/tpl" id="detailTemplate">
           <div class='name'><h3><%- name %></h3></div>
           <% _.each(variables, function(variable) { %>
-            <div class='value javascript' data-line='<%- variable.zeroedLineNumber %>'><%= '@line ' + variable.lineNumber + ': ' + renderValue(variable.value) %></div>
+            <div class='value javascript' data-line='<%- variable.zeroedLineNumber %>'><%= renderValue(variable.value) %></div>
             <% }); %>
           <div class='contextual'></div>
         </script>

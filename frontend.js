@@ -136,9 +136,19 @@ $(function() {
       }
     },
     events: {
-      "click .line": "clickLine"
+      "click .line": "clickLine",
+      "click .CallExpression .Identifier": "clickCall"
     },
     clickLine: function(e) {
+    },
+    clickCall: function(e) {
+      var $call = $(e.target).closest(".CallExpression");
+      var start = $call.data("start");
+      var call = _.find(model.get("calls"), function(c) { return c.start == start;});
+      var rendered = renderValue(call.func, false, true);
+      rendered = "(" + rendered + ")";
+      var output = renderVariableValues(rendered, this.model.get("values"), start);
+      console.log(output);
     },
     template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i + 1 %></span><%= line %></span>\n<% }); %></code></pre>"),
     render: function() {
@@ -197,6 +207,7 @@ $(function() {
       this.on("change:processor", function(model, processor) {
         this.get("state").clear();
         this.get("values").reset(processor.values);
+        this.set("calls", processor.calls);
         this.set("scope", processor.scope);
         this.set("linePositions", processor.linePositions);
         this.set("text", processor.code);
@@ -240,7 +251,11 @@ $(function() {
   var detailView = new DetailView({el: $("#detailDisplay"), eventSource: variableView});
 
   // very basic at this point, makes a bunch of assumptions
-  var renderVariableValues = function(text, values) {
+  var renderVariableValues = function(text, values, index) {
+    var copy = text,
+        list = [],
+        offset = 0;
+
     var wrap = function(string, start, end, template, config) {
       start = start + offset;
       end = end + offset;
@@ -262,16 +277,23 @@ $(function() {
       return "ERROR";
     };
 
-    var copy = text,
-        list = [],
-        offset = 0;
-
     acorn.walk.recursive(acorn.parse(text), false, {
       AssignmentExpression: function(node, state, c) { 
         c(node.right, true);
       },
       UpdateExpression: function(node, state, c) {
         c(node.argument, true);
+      },
+      FunctionExpression: function(node, state, c) {
+        c(node.body, false);
+        _.each(node.params, function(param) {
+          c(param, true);
+        });
+      },
+      VariableDeclaration: function(node, state, c) {
+        _.each(node.declarations, function(node) {
+          c(node.init, true);
+        });
       },
       Identifier: function(node, state, c) {
         if(state) {
@@ -280,8 +302,11 @@ $(function() {
       }
     });
 
+    list = _.sortBy(list, "start");
+
     _.each(list, function(val) {
-      copy = wrap(copy, val.start, val.end, "{<%= lookupLast(val.start, contents) %>}", {lookupLast: lookupLast, val: val});
+      var start = index + val.start;
+      copy = wrap(copy, val.start, val.end, "{<%= lookupLast(start, contents) %>}", {lookupLast: lookupLast, start: start});
     });
     
     return copy;

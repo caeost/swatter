@@ -24,8 +24,8 @@
       values.push(processed);
     };
 
-    var processCall = function(name, func, index) {
-      calls.push({name: name, func: func, index: index});
+    var processCall = function(name, func, start, end) {
+      calls.push({name: name, func: func, start: start, end: end});
     };
 
     try {
@@ -64,13 +64,13 @@
 
 
   // templates
-  var callTemplate = _.template(";__processCall(\"<%=  name %>\",<%= name %>, <%= index %>);");
-  exports.callStringRegex = /;__processCall\(.*\);/
+  var callTemplate = _.template(";__processCall(\"<%=  name %>\",<%= name %>, <%= start %>, <%= end %>);");
+  exports.callStringRegex = /;__processCall\([^;]*\);/
 
   var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= index %>);");
-  exports.valuesStringRegex = /;__processValue\(.*\);/g;
+  exports.valuesStringRegex = /;__processValue\([^;]*\);/g;
 
-  var wrapperTemplate = _.template("<span class='<%= type %>'><%= contents %></span>");
+  var wrapperTemplate = _.template("<span class='<%= type %>' data-start='<%= start %>' data-end='<%= end %>'><%= contents %></span>");
 
   // node processing
   var processAssignment = function(node) {
@@ -133,7 +133,11 @@
 
     // testing
     var htmlize = function(node) {
-      renderedCode = renderWrap.wrap(renderedCode, node.start, node.end, wrapperTemplate,{type: node.type});
+      renderedCode = renderWrap.wrap(renderedCode, node.start, node.end, wrapperTemplate, {
+        type: node.type, 
+        end: node.end,
+        start: node.start
+      });
     };
 
     acorn.walk.recursive(AST, base, {
@@ -150,6 +154,9 @@
         _.each(node.params, function(node) {
           newstate.variables[node.name] = node;
         });
+
+        // generalize later
+        appendValue(node.body.body[0].start, newstate.variables);
 
         state.children.push(newstate);
         node.state = newstate;
@@ -189,7 +196,8 @@
       CallExpression: function(node, state, c) {
         var object = {
           name: node.callee.name,
-          index: node.end
+          end: node.end,
+          start: node.start
         };
         append(node.end, object, callTemplate);
         htmlize(node);
