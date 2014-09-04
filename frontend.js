@@ -143,7 +143,7 @@ $(function() {
     template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i + 1 %></span><%= line %></span>\n<% }); %></code></pre>"),
     render: function() {
       this.$el.html(this.template({lines: this.model.get("rendered").split("\n")}));
-      hljs.initHighlighting();
+      hljs.highlightBlock(this.el);
     }
   });
 

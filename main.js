@@ -194,6 +194,9 @@
         append(node.end, object, callTemplate);
         htmlize(node);
         c(node.callee, state);
+      },
+      Identifier: function(node, state, c) {
+        htmlize(node);
       }
     });
 
