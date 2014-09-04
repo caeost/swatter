@@ -7,10 +7,11 @@
 
   var processCode = function(code, values, calls) {
 
-    var processValue = function(object, index) {
+    var processValue = function(object, start, end) {
       var processed = {
         type: "value",
-        index: index
+        start: start,
+        end: end
       };
 
       processed.values = _.reduce(object, function(memo, value, key) {
@@ -67,7 +68,7 @@
   var callTemplate = _.template(";__processCall(\"<%=  name %>\",<%= name %>, <%= start %>, <%= end %>);");
   exports.callStringRegex = /;__processCall\([^;]*\);/
 
-  var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= index %>);");
+  var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= start %>, <%= end %>);");
   exports.valuesStringRegex = /;__processValue\([^;]*\);/g;
 
   var wrapperTemplate = _.template("<span class='<%= type %>' data-start='<%= start %>' data-end='<%= end %>'><%= contents %></span>");
@@ -117,7 +118,7 @@
       copiedCode = wrap.append(copiedCode, index, template, object);
     };
 
-    var appendValue = function(index, object) {
+    var appendValue = function(index, start, end, object) {
       var stringified = "";
       if(!_.isObject(object)) {
         var name = object;
@@ -128,7 +129,7 @@
         return key + ":" + key;
       });
       stringified = "{" + keys.join(",") + "}";
-      append(index, {stringified: stringified}, valuesTemplate);
+      append(index, {stringified: stringified, start: start, end: end}, valuesTemplate);
     };
 
     // testing
@@ -156,11 +157,18 @@
         });
 
         // generalize later
-        appendValue(node.body.body[0].start, newstate.variables);
+        appendValue(node.body.body[0].start - 1, node.start, node.end, newstate.variables);
 
         state.children.push(newstate);
         node.state = newstate;
+
+        htmlize(node);
+
         c(node.body, newstate);
+      },
+      WhileStatement: function(node, state, c) {
+        htmlize(node);
+        c(node.body, state);
       },
       VariableDeclaration: function(node, state, c) {
         var processed = processDeclaration(node);
@@ -174,21 +182,21 @@
           c(node.id, state);
           if(node.init) c(node.init, state);
         });
-        appendValue(node.end, processed.declarations);
+        appendValue(node.end, node.start, node.end, processed.declarations);
         htmlize(node);
       },
       AssignmentExpression: function(node, state, c) {
         // todo: need to track undeclared variables as they become globals
         var assignment = processAssignment(node);
         state.expressions.push(assignment);
-        appendValue(node.end, assignment.name);
+        appendValue(node.end, node.start, node.end, assignment.name);
         htmlize(node);
         c(node.left, state);
         c(node.right, state);
       },
       UpdateExpression: function(node, state, c) {
         var update = processUpdate(node);
-        appendValue(node.end, update.name);
+        appendValue(node.end, node.start, node.end, update.name);
         state.expressions.push(update);
         htmlize(node);
         c(node.argument, state);

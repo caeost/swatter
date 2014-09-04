@@ -22,7 +22,7 @@
 .line.semi {
   background: yellowgreen;
 }
-.line.active {
+.active {
   background: yellow;
 }
 .contextual div {
@@ -32,6 +32,10 @@
   padding: 3px;
   margin: 1px;
   color: white;
+}
+
+code.javascript {
+  float: left;
 }
 
 del {
@@ -48,8 +52,12 @@ ins {
 .line-number {
   margin-right: 5px;
   color: blue;
-  display: inline-block;
   border-right: 1px solid black;
+  padding-right: 4px;
+}
+.numbers {
+  float: left;
+  white-space: normal;
 }
 
 #displayArea pre {

@@ -51,12 +51,12 @@ $(function() {
     template: _.template($("#detailTemplate").text()),
     render: function(name, variables) {
       this.$el.html(this.template({name: name, variables: variables, renderValue: renderValue}));
-      var numberValues = _.chain(variables)
+      var numbersNSuch = _.chain(variables)
                             .pluck("value")
-                            .filter(_.isNumber)
+                            .partition(_.isNumber)
                             .value();
 
-      if(numberValues.length) {
+      if(numbersNSuch[0].length) {
         d3.select("#detailDisplay .contextual")
           .selectAll("div")
             .data(numberValues)
@@ -64,6 +64,7 @@ $(function() {
             .style("width", function(d) { return d * 10 + "px"; })
             .text(function(d) { return d; });
       }
+
     }
   });
 
@@ -125,12 +126,16 @@ $(function() {
     height: 700,
     initialize: function(options) {
       if(options.model) {
-        this.listenTo(options.model, "change:selectedLine", function(model, line) {
-          var $lines = this.$(".line").removeClass("active");
-          var $line = $lines.eq(line).addClass("active");
+        this.listenTo(options.model, "change:currentModel", function(m, model) {
+          this.$(".active").removeClass("active");
+          var start = model.get("start");
+          var end = model.get("end");
+          var $value = this.$("[data-start='" + start + "'][data-end='" + end + "']");
+
+          $value.addClass("active");
 
           var $pre = this.$("pre");
-          $pre.scrollTop($pre.scrollTop() + ($line.offset().top - (this.height / 2)));
+          $pre.scrollTop($pre.scrollTop() + ($value.offset().top - (this.height / 2)));
         });
         this.listenTo(options.model, "change:rendered", this.render);
       }
@@ -150,24 +155,15 @@ $(function() {
       var output = renderVariableValues(rendered, this.model.get("values"), start);
       console.log(output);
     },
-    template: _.template("<pre class='code'><code class='javascript'><% _.each(lines, function(line, i) { %><span class='line'><span class='line-number'><%- i + 1 %></span><%= line %></span>\n<% }); %></code></pre>"),
+    template: _.template($("#codeTemplate").text()),
     render: function() {
-      this.$el.html(this.template({lines: this.model.get("rendered").split("\n")}));
+      var code = this.model.get("rendered");
+      var length = this.model.get("processor").length;
+      this.$el.html(this.template({
+        code: code,
+        length: length
+      }));
       hljs.highlightBlock(this.el);
-    }
-  });
-
-  var CodeCSSView = Backbone.View.extend({
-    initialize: function(options) {
-      if(options.model) {
-        this.listenTo(options.model, "change:rendered", this.render);
-      }
-    },
-    tagName: "style",
-    template: _.template(" .line-number { width: <%- lineWidth %>px;}"),
-    render: function() {
-      var lineWidth = (this.model.get("processor").length + "").length * 10;
-      this.$el.html(this.template({lineWidth: lineWidth}));
     }
   });
 
@@ -201,7 +197,7 @@ $(function() {
         if(!options || !options.slider) {
           $slider[0].value = index;
         }
-        this.set("selectedLine", this.lookupLine(position) - 1);
+        this.set("currentModel", valueModel);
       });
       
       this.on("change:processor", function(model, processor) {
@@ -247,7 +243,6 @@ $(function() {
   var model = window.model = new Model(); 
   var variableView = new VariableView({model: model.get("state"), collection: model.get("values"), el: variables});
   var codeView = new CodeView({el: $inputArea.find("#displayArea"), model: model});
-  var codeCSSView = new CodeCSSView({el: $("#CodeCSSView"), model: model});
   var detailView = new DetailView({el: $("#detailDisplay"), eventSource: variableView});
 
   // very basic at this point, makes a bunch of assumptions
