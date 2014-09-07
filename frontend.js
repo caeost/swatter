@@ -146,20 +146,26 @@ $(function() {
         });
         this.listenTo(options.model, "change:renderedCode", this.render);
         this.listenTo(options.model, "change:peek", function(model, peek) {
-          this.$(".Identifier").each(function() {
-            var $this = $(this),
-                val = $this.data("value");
-            if(peek) {
-              $this.text(val);
-            } else {
-              $this.text($this.data("name"));
-            }
-          }); 
+           this.peek(peek, this.$el);
         });
       }
     },
+    peek: function(peek, $el) {
+      $el.find(".Identifier").each(function() {
+          var $this = $(this),
+              val = $this.data("value");
+          if(peek) {
+            $this.text(val);
+          } else {
+            $this.text($this.data("name"));
+          }
+        });
+    },
     events: {
-      "click .CallExpression .Identifier": "clickCall"
+      "click .CallExpression .Identifier": "clickCall",
+      "input .scrubber": "scrub",
+      "mousedown .scrubber": "peekLoop",
+      "mouseup .scrubber": "unpeekLoop"
     },
     clickCall: function(e) {
       var $call = $(e.target).closest(".CallExpression");
@@ -169,6 +175,22 @@ $(function() {
       rendered = "(" + rendered + ")";
       var output = renderVariableValues(rendered, this.model.get("timeline"), start);
       console.log(output);
+    },
+    scrub: function(e) {
+      var $target = $(e.target),
+          className = $target.data("loop"),
+          value = +$target.val();
+
+      this.$(".while." + className + " .WhileStatement").hide().eq(value).show();
+
+    },
+    peekLoop: function(e) {
+      var $while = $(e.target).closest(".while");
+      this.peek(true, $while);
+    },
+    unpeekLoop: function(e) {
+      var $while = $(e.target).closest(".while");
+      this.peek(false, $while);
     },
     template: _.template($("#codeTemplate").text()),
     markupValues: function() {
@@ -186,7 +208,7 @@ $(function() {
           var el = expressions.filter("[data-start='" + start + "'][data-end='" + end + "']").last();
           var clone = el.clone(true);
           clone.addClass("clone");
-          // todo fix
+          clone.hide();
           clone.data("iteration", val.get("iteration"));
           el.after(clone);
         } else if(type == "value") {
@@ -218,12 +240,18 @@ $(function() {
      // });
       this.markupValues();
 
-      // testing
-      this.$(".WhileStatement:not(.clone)").before(whileTemplate());
-    }
+      // by this point loops are unrolled
+      var whileTemplate = this.whileTemplate;
+      this.$(".WhileStatement:not(.clone)").each(function() {
+        var $this = $(this);
+        var id = _.uniqueId("while");
+        var allUnrolled = $this.add($this.nextUntil(":not(.clone)"));
+        allUnrolled.wrapAll("<div class='while " + id + "'>");
+        $this.before(whileTemplate({id: id, max: allUnrolled.length - 1}));
+      });
+    },
+    whileTemplate: _.template("<div class='scrubber'><input type='range' value='0' max='<%= max %>' data-loop='<%= id %>'></div>")
   });
-
-  var whileTemplate = _.template("<div class='scrubber'><input type='range' value='0'></div>");
 
   var Model = Backbone.Model.extend({
     initialize: function() {
