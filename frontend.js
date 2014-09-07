@@ -122,6 +122,13 @@ $(function() {
     }
   });
 
+  // plan is to change this quite a bit, showing the variables underneath is not wholly useful.
+  // instead inlining values, showing results of branch statements etc. + detailed views like graphs
+  // per variable seem more powerful. How exactly this should look is still unknown. the sliders will
+  // probably move into the areas where loops exist, as the temporal flow of the program is already evident
+  // from the structure of the code ( could also be made more evident by function inlining later) so scrubbing
+  // through that is of questionable use. Scrubbing across different iterations of a loop inline would be nice.
+  // Also being able to change literals values could be useful for seeing whats going on.
   var CodeView = Backbone.View.extend({
     height: 700,
     initialize: function(options) {
@@ -137,80 +144,102 @@ $(function() {
           var $pre = this.$("pre");
           $pre.scrollTop($pre.scrollTop() + ($value.offset().top - (this.height / 2)));
         });
-        this.listenTo(options.model, "change:rendered", this.render);
+        this.listenTo(options.model, "change:renderedCode", this.render);
+        this.listenTo(options.model, "change:peek", function(model, peek) {
+          this.$(".Identifier").each(function() {
+            var $this = $(this),
+                val = $this.data("value");
+            if(peek) {
+              $this.text(val);
+            } else {
+              $this.text($this.data("name"));
+            }
+          }); 
+        });
       }
     },
     events: {
-      "click .line": "clickLine",
       "click .CallExpression .Identifier": "clickCall"
-    },
-    clickLine: function(e) {
     },
     clickCall: function(e) {
       var $call = $(e.target).closest(".CallExpression");
       var start = $call.data("start");
-      var call = _.find(model.get("calls"), function(c) { return c.start == start;});
+      var call = _.find(model.get("timeline"), function(c) { return c.start == start;});
       var rendered = renderValue(call.func, false, true);
       rendered = "(" + rendered + ")";
-      var output = renderVariableValues(rendered, this.model.get("values"), start);
+      var output = renderVariableValues(rendered, this.model.get("timeline"), start);
       console.log(output);
     },
     template: _.template($("#codeTemplate").text()),
+    markupValues: function() {
+      var cursor;
+
+      // timeline is now a heterogenous structure of different kinds of values, fix
+      this.model.get("timeline").each(function(val) {
+        var start = val.get("start"),
+            end = val.get("end"),
+            type = val.get("type"),
+            // could get rid of these repeated re searches if we added cloned nodes to the list as we go
+            expressions = this.$(".expression");
+
+        if(type == "loop" && val.get("iteration")) {
+          var el = expressions.filter("[data-start='" + start + "'][data-end='" + end + "']").last();
+          var clone = el.clone(true);
+          clone.addClass("clone");
+          // todo fix
+          clone.data("iteration", val.get("iteration"));
+          el.after(clone);
+        } else if(type == "value") {
+          var values = val.get("values");
+          _.each(values, function(value, name) {
+            var minimum = cursor ? expressions.slice($.inArray(cursor[0], expressions) + 1) : expressions;
+            var node = minimum.filter("[data-start='" + value.position.start + "'][data-end='" + value.position.end + "']").eq(0);
+            cursor = node;
+            if(!node.length) throw new Error("node not found for value that exists");
+            node
+              .data("value", value.value)
+              .data("name", name);
+          });
+        }
+      }, this);
+    },
     render: function() {
-      var code = this.model.get("rendered");
-      var length = this.model.get("processor").length;
+      var code = this.model.get("renderedCode");
+      // no line numbers for right now cause i cant decide what to do
+      // kinda gnarls
+      //code = code.replace(/\n/g, "\n<span class='line-number'></span>");
+      //code = "<span class='line-number'></span>" + code;
       this.$el.html(this.template({
         code: code,
-        length: length
       }));
       hljs.highlightBlock(this.el);
+     // this.$(".line-number").each(function(i) { 
+     //   $(this).text(i + 1);
+     // });
+      this.markupValues();
+
+      // testing
+      this.$(".WhileStatement:not(.clone)").before(whileTemplate());
     }
   });
 
+  var whileTemplate = _.template("<div class='scrubber'><input type='range' value='0'></div>");
+
   var Model = Backbone.Model.extend({
     initialize: function() {
-      this.set("state", new Backbone.Model);
+      this.set("timeline", new Backbone.Collection);
 
-      // should use line number as id attribute
-      this.set("values", new Backbone.Collection);
-
-      // index is the main control mechanism for looking through the code,
-      // it corresponds to which variable change is going on
-      this.on("change:index", function(model, index, options) {
-        var values = this.get("values");
-        var valueModel = values.at(index);
-        var position = valueModel.get("index");
-        var variables = {};
-        
-        this.get("state").clear();
-
-        var counter = 0;
-        while(counter <= index) {
-          _.extend(variables, values.at(counter).get("values"));
-          counter++;
-        }
-        // this is a little dirty right now but hey
-        var inScope = this.lookupVariables(position);
-        this.get("state").set(_.pick(variables, _.keys(inScope)));
-        
-        // todo: make slider view and move this there
-        if(!options || !options.slider) {
-          $slider[0].value = index;
-        }
-        this.set("currentModel", valueModel);
-      });
-      
-      this.on("change:processor", function(model, processor) {
-        this.get("state").clear();
-        this.get("values").reset(processor.values);
-        this.set("calls", processor.calls);
-        this.set("scope", processor.scope);
-        this.set("linePositions", processor.linePositions);
-        this.set("text", processor.code);
-        this.set("rendered", processor.renderedCode);
-        this.set("index", -1, {silent: true});
-        this.set("index", 0);
-      });
+      var model = this;
+      $("body").keydown(function(e) { 
+          if(e.which == 16) { 
+            model.set("peek", true); 
+          } 
+        })
+        .keyup(function(e) { 
+          if(e.which == 16) {
+            model.set("peek", false);
+          } 
+        });
     },
     lookupVariables: function(position) {
       var variables = {},
@@ -224,19 +253,9 @@ $(function() {
 
       return variables;
     },
-    lookupLine: function(position) {
-      var positions = this.get("linePositions");
-      var line = -1;
-      var index = 0;
-      while(position >= index) {
-        line++;
-        index = positions[line];
-      }
-      return line;
-    },
-    lookupVariablesByLine: function(lineNumber) {
-      var position = this.get("linePositions")[lineNumber];
-      return this.lookupVariables(position);
+    parse: function(processor) {
+      processor.timeline = new Backbone.Collection(processor.timeline);
+      return processor;
     }
   });
 
@@ -316,18 +335,11 @@ $(function() {
     var text = $inputArea.find("#box").val();
 
     var processor = new AnalyzeCode.Processor(text);
-    model.set("processor", processor);
-
-    $slider.prop("max", processor.values.length - 1);
+    model.set(model.parse(processor));
   });
 
   $("#EditButton").click(function() {
     $inputArea.removeClass("ViewMode");
-  });
-
-  $slider.on("input change", function() {
-    var value = +$(this).val();
-    model.set("index", value, {slider: true});
   });
 });
 

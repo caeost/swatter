@@ -5,40 +5,6 @@
   mod(this.AnalyzeCode = {}); // Plain browser env
 })(function(exports) {
 
-  var processCode = function(code, values, calls) {
-
-    var processValue = function(object, start, end) {
-      var processed = {
-        type: "value",
-        start: start,
-        end: end
-      };
-
-      processed.values = _.reduce(object, function(memo, value, key) {
-        if(!_.isFunction(value) && _.isObject(value)) {
-          value = lodash.cloneDeep(value);
-        }
-        memo[key] = value;
-        return memo;
-      }, {});
-
-      values.push(processed);
-    };
-
-    var processCall = function(name, func, start, end) {
-      calls.push({name: name, func: func, start: start, end: end});
-    };
-
-    try {
-      var func = new Function("__processValue", "__processCall", code);
-      func = _.bind(func, {});
-
-      func(processValue, processCall);
-    } catch(e) {
-      console.error(e);
-    }
-  };
-
   // utility
   var constructObjectReference = function(node) {
     var string = "";
@@ -61,17 +27,19 @@
         }
         return current;
       });
-  }
-
+  };
 
   // templates
   var callTemplate = _.template(";__processCall(\"<%=  name %>\",<%= name %>, <%= start %>, <%= end %>);");
-  exports.callStringRegex = /;__processCall\([^;]*\);/
+  exports.callStringRegex = /;__processCall\([^;]*\);/g;
 
   var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= start %>, <%= end %>);");
   exports.valuesStringRegex = /;__processValue\([^;]*\);/g;
 
-  var wrapperTemplate = _.template("<span class='<%= type %>' data-start='<%= start %>' data-end='<%= end %>'><%= contents %></span>");
+  var wrapperTemplate = _.template("<span class='<%= type %> expression' data-start='<%= start %>' data-end='<%= end %>'><%= contents %></span>");
+
+  var loopTemplate = _.template(";__processLoop(<%= start %>, <%= end %>);");
+  exports.loopStringRegex = /;__processLoop\([^;]*\);/g;
 
   // node processing
   var processAssignment = function(node) {
@@ -103,10 +71,39 @@
   var Processor = exports.Processor = function(code) {
     var copiedCode = code,
         renderedCode = code,
-        values = [],
-        calls = [],
+        timeline = [],
         wrap = new Wrap(),
         renderWrap = new Wrap();
+
+    var processValue = function(object, start, end) {
+      var processed = {
+        type: "value",
+        start: start,
+        end: end
+      };
+
+      processed.values = _.reduce(object, function(memo, value, key) {
+        if(!_.isFunction(value) && _.isObject(value)) {
+          value = lodash.cloneDeep(value);
+        }
+        // might need to save the explicit position as right now only the expressions position is saved
+        memo[key] = value;
+        return memo;
+      }, {});
+
+      timeline.push(processed);
+    };
+
+    var processCall = function(name, func, start, end) {
+      timeline.push({name: name, func: func, start: start, end: end, type: "call"});
+    };
+
+    var seen = {};
+    var processLoop = function(start, end) {
+      var hash = start + "x" + end;
+      seen[hash] === void 0 ?  seen[hash] = 0 : seen[hash]++;
+      timeline.push({type: "loop", start: start, end: end, iteration: seen[hash]});
+    };
   
     var AST = acorn.parse(code, {locations: true});
 
@@ -118,27 +115,34 @@
       copiedCode = wrap.append(copiedCode, index, template, object);
     };
 
-    var appendValue = function(index, start, end, object) {
+    var appendValue = function(index, start, end, object, position) {
       var stringified = "";
       if(!_.isObject(object)) {
         var name = object;
         object = {};
-        object[name] = true;
+        object[name] = position;
       }
-      var keys = _.map(object, function(value, key) {
-        return key + ":" + key;
+      var properties = _.map(object, function(value, key) {
+        return key + ": {value: " + key + ",position: " + JSON.stringify(value) + "}";
       });
-      stringified = "{" + keys.join(",") + "}";
+      stringified = "{" + properties.join(",") + "}";
       append(index, {stringified: stringified, start: start, end: end}, valuesTemplate);
     };
 
-    // testing
     var htmlize = function(node) {
       renderedCode = renderWrap.wrap(renderedCode, node.start, node.end, wrapperTemplate, {
         type: node.type, 
         end: node.end,
         start: node.start
       });
+    };
+
+    var findVariableDefinition = function(name, state) {
+      if(state.variables[name]) {
+        return state.variables[name];
+      } else {
+        return findVariableDefinition(name, state.parent);
+      }
     };
 
     acorn.walk.recursive(AST, base, {
@@ -168,6 +172,7 @@
       },
       WhileStatement: function(node, state, c) {
         htmlize(node);
+        append(node.body.start + 1, {start: node.start, end: node.end}, loopTemplate);
         c(node.body, state);
       },
       VariableDeclaration: function(node, state, c) {
@@ -175,7 +180,7 @@
         state.expressions.push(processed);
 
         _.each(node.declarations, function(node) {
-          processed.declarations[node.id.name] = node;
+          processed.declarations[node.id.name] = {start: node.id.start, end: node.id.end};
           node.gid = _.uniqueId("var");
           state.variables[node.id.name] = node;
 
@@ -189,14 +194,14 @@
         // todo: need to track undeclared variables as they become globals
         var assignment = processAssignment(node);
         state.expressions.push(assignment);
-        appendValue(node.end, node.start, node.end, assignment.name);
+        appendValue(node.end, node.start, node.end, assignment.name, {start: node.start, end: node.end});
         htmlize(node);
         c(node.left, state);
         c(node.right, state);
       },
       UpdateExpression: function(node, state, c) {
         var update = processUpdate(node);
-        appendValue(node.end, node.start, node.end, update.name);
+        appendValue(node.end, node.start, node.end, update.name, {start: node.argument.start, end: node.argument.end});
         state.expressions.push(update);
         htmlize(node);
         c(node.argument, state);
@@ -217,30 +222,16 @@
     });
 
     // this needs to be moved into a web worker or something to not pollute and conflict
-    processCode(copiedCode, values, calls);
+    try {
+      var func = new Function("__processValue", "__processCall", "__processLoop", copiedCode);
+      func = _.bind(func, {});
 
-    var alreadySeen = {};
-    values = _.map(values, function(value) {
-      var start = value.start;
-      var existing = alreadySeen[start] || 0;
-      alreadySeen[start] = value.repeat = existing + 1;
-      return value;
-    });
-
-    var linePositions = [0];
-    var length = 1;
-    var last = 0;
-    while(true) {
-      var index = code.indexOf("\n", last) + 1;
-      if(index == 0) break;
-      linePositions.push(index);
-      last = index;
-      length++;
+      func(processValue, processCall, processLoop);
+    } catch(e) {
+      console.error(e);
     }
 
-    this.values = values;
-    this.calls = calls;
-    this.linePositions = linePositions;
+    this.timeline = timeline;
     this.length = length;
     this.AST = AST;
     this.transformedCode = copiedCode;
