@@ -181,15 +181,15 @@ $(function() {
           className = $target.data("loop"),
           value = +$target.val();
 
-      this.$(".while." + className + " .WhileStatement").hide().eq(value).show();
-
+      var loopHolder = this.$(".loop." + className);
+      loopHolder.find(".ForStatement, .WhileStatement").hide().eq(value).show();
     },
     peekLoop: function(e) {
-      var $while = $(e.target).closest(".while");
+      var $while = $(e.target).closest(".loop");
       this.peek(true, $while);
     },
     unpeekLoop: function(e) {
-      var $while = $(e.target).closest(".while");
+      var $while = $(e.target).closest(".loop");
       this.peek(false, $while);
     },
     template: _.template($("#codeTemplate").text()),
@@ -241,16 +241,16 @@ $(function() {
       this.markupValues();
 
       // by this point loops are unrolled
-      var whileTemplate = this.whileTemplate;
-      this.$(".WhileStatement:not(.clone)").each(function() {
+      var loopTemplate = this.loopTemplate;
+      this.$(".WhileStatement:not(.clone), .ForStatement:not(.clone)").each(function() {
         var $this = $(this);
-        var id = _.uniqueId("while");
+        var id = _.uniqueId("loop");
         var allUnrolled = $this.add($this.nextUntil(":not(.clone)"));
-        allUnrolled.wrapAll("<div class='while " + id + "'>");
-        $this.before(whileTemplate({id: id, max: allUnrolled.length - 1}));
+        allUnrolled.wrapAll("<div class='loop " + id + "'>");
+        $this.before(loopTemplate({id: id, max: allUnrolled.length - 1}));
       });
     },
-    whileTemplate: _.template("<div class='scrubber'><input type='range' value='0' max='<%= max %>' data-loop='<%= id %>'></div>")
+    loopTemplate: _.template("<div class='scrubber'><input type='range' value='0' max='<%= max %>' data-loop='<%= id %>'></div>")
   });
 
   var Model = Backbone.Model.extend({

@@ -145,6 +145,26 @@
       }
     };
 
+    var findVariablesInNode = function(node) {
+      var names = {};
+      acorn.walk.simple(node, {
+        Identifier: function(node) {
+          names[node.name] = {start: node.start, end: node.end};
+        }
+      });
+      return names;
+    };
+
+    var markIdentifiers = function(/** nodes **/) {
+      _.each(arguments, function(node) {
+        acorn.walk.simple(node, {
+          Identifier: function(node) {
+            htmlize(node);
+          }
+        });
+      });
+    };
+
     acorn.walk.recursive(AST, base, {
       FunctionExpression: function(node, state, c) {
         var newstate = {
@@ -157,7 +177,7 @@
         };
 
         _.each(node.params, function(node) {
-          newstate.variables[node.name] = node;
+          newstate.variables[node.name] = {start: node.start, end: node.end};
         });
 
         // generalize later
@@ -173,6 +193,19 @@
       WhileStatement: function(node, state, c) {
         htmlize(node);
         append(node.body.start + 1, {start: node.start, end: node.end}, loopTemplate);
+        c(node.body, state);
+      },
+      ForStatement: function(node, state, c) {
+        htmlize(node);
+        var startOfBody = node.body.start + 1;
+        append(startOfBody, {start: node.start, end: node.end}, loopTemplate);
+
+        markIdentifiers(node.init, node.update, node.test);
+
+        // fix acorn not finding Identifiers in variable declarations
+        //appendValue(startOfBody, node.start, node.end, findVariablesInNode(node.init));
+        appendValue(startOfBody, node.start, node.end, findVariablesInNode(node.test));
+        appendValue(startOfBody, node.start, node.end, findVariablesInNode(node.update));
         c(node.body, state);
       },
       VariableDeclaration: function(node, state, c) {
@@ -194,7 +227,7 @@
         // todo: need to track undeclared variables as they become globals
         var assignment = processAssignment(node);
         state.expressions.push(assignment);
-        appendValue(node.end, node.start, node.end, assignment.name, {start: node.start, end: node.end});
+        appendValue(node.end, node.start, node.end, assignment.name, {start: node.left.start, end: node.left.end});
         htmlize(node);
         c(node.left, state);
         c(node.right, state);
