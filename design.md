@@ -25,8 +25,7 @@
   * maybe even allow live editing of values, like if: var x = 1; var y = x; changing y could make var y = x + {change}
   * reflect changes back to original code
 * allow selecting a chunk of code and editing of it within the editor, but inline into the viewing mode, live changes too
-
-# performance concerns could also show up
+* performance concerns could also show up
 * such as showing long scope lookups or whatever.
 
 # save initializer variables and make them serializable for sending to people with url
