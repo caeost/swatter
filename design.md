@@ -1,6 +1,12 @@
 ## show read values
 * pretty key
 
+## rebuild details view
+* show number value changes over time as graphs with highlighting of where the change happened
+* diff strings and promininently show changed parts of large strings
+* allow digging into objects keys and mapping diffing those as desired
+* allow moving and placing of these views and live updating them
+
 ## then highlighting variables the same color
 * whether its in value or name mode
 * need to chose colors somewhat carefully (first version can be lazy) to keep them all seperate.
