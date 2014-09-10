@@ -8,12 +8,12 @@
   // utility
   var constructObjectReference = function(node) {
     var string = "";
-    if(node.object.type == "MemberExpression") {
-      string = constructObjectReference(node.object)
+    if(node.type == "MemberExpression") {
+      string = node.object.name + "." + constructObjectReference(node.property)
     } else {
-      string = node.object.name;
+      string = node.name;
     }
-    return string + "." + node.property.name;
+    return string;
   };
 
   var pluck = function(collection, key) {
@@ -115,7 +115,7 @@
       copiedCode = wrap.append(copiedCode, index, template, object);
     };
 
-    var appendValue = function(index, start, end, object, position) {
+    var appendValue = function(index, start, end, scope, object, position) {
       var stringified = "";
       if(!_.isObject(object)) {
         var name = object;
@@ -123,7 +123,8 @@
         object[name] = position;
       }
       var properties = _.map(object, function(value, key) {
-        return key + ": {value: " + key + ",position: " + JSON.stringify(value) + "}";
+        var variable = scopeVariable(scope, key);
+        return variable.gid + ": {value: " + key + ",position: " + JSON.stringify(value) + ", name: \"" + key + "\"}";
       });
       stringified = "{" + properties.join(",") + "}";
       append(index, {stringified: stringified, start: start, end: end}, valuesTemplate);
@@ -145,24 +146,41 @@
       }
     };
 
-    var findVariablesInNode = function(node) {
-      var names = {};
-      acorn.walk.simple(node, {
-        Identifier: function(node) {
-          names[node.name] = {start: node.start, end: node.end};
-        }
-      });
-      return names;
+    var findVariablesInNode = function(/* nodes */) {
+      return _.reduce(findIdentifiers.apply(this, arguments), function(memo, node) {
+        memo[node.name] = node;
+        return memo;
+      }, {});
     };
 
-    var markIdentifiers = function(/** nodes **/) {
+    var markIdentifiers = function(/* nodes */) {
+      _.each(findIdentifiers.apply(this, arguments), htmlize);
+    };
+
+    var findIdentifiers = function(/* nodes */) {
+      var identifiers = [];
       _.each(arguments, function(node) {
-        acorn.walk.simple(node, {
-          Identifier: function(node) {
-            htmlize(node);
+        acorn.walk.recursive(node, "", {
+          MemberExpression: function(node, state, c) {
+            var lookup = constructObjectReference(node.property);
+            c(node.object, lookup);
+          },
+          Identifier: function(node, state, c) {
+            if(state) node.lookup = state;
+            identifiers.push(node);
           }
         });
       });
+      return identifiers;
+    };
+
+    var scopeVariable = exports.scopeVariable = function(scope, name) {
+      var found = false;
+      while(!found && scope) {
+        found = scope.variables[name];
+        scope = scope.parent;
+      }
+      return found;
     };
 
     acorn.walk.recursive(AST, base, {
@@ -177,11 +195,12 @@
         };
 
         _.each(node.params, function(node) {
-          newstate.variables[node.name] = {start: node.start, end: node.end};
+          node.gid = _.uniqueId("var");
+          newstate.variables[node.name] = node;
         });
 
         // generalize later
-        appendValue(node.body.body[0].start - 1, node.start, node.end, newstate.variables);
+        appendValue(node.body.body[0].start - 1, node.start, node.end, newstate, newstate.variables);
 
         state.children.push(newstate);
         node.state = newstate;
@@ -193,6 +212,7 @@
       WhileStatement: function(node, state, c) {
         htmlize(node);
         append(node.body.start + 1, {start: node.start, end: node.end}, loopTemplate);
+        c(node.test, state);
         c(node.body, state);
       },
       ForStatement: function(node, state, c) {
@@ -204,8 +224,8 @@
 
         // fix acorn not finding Identifiers in variable declarations
         //appendValue(startOfBody, node.start, node.end, findVariablesInNode(node.init));
-        appendValue(startOfBody, node.start, node.end, findVariablesInNode(node.test));
-        appendValue(startOfBody, node.start, node.end, findVariablesInNode(node.update));
+        appendValue(startOfBody, node.start, node.end, state, findVariablesInNode(node.test));
+        appendValue(startOfBody, node.start, node.end, state, findVariablesInNode(node.update));
         c(node.body, state);
       },
       VariableDeclaration: function(node, state, c) {
@@ -220,21 +240,21 @@
           c(node.id, state);
           if(node.init) c(node.init, state);
         });
-        appendValue(node.end, node.start, node.end, processed.declarations);
+        appendValue(node.end, node.start, node.end, state, processed.declarations);
         htmlize(node);
       },
       AssignmentExpression: function(node, state, c) {
         // todo: need to track undeclared variables as they become globals
         var assignment = processAssignment(node);
         state.expressions.push(assignment);
-        appendValue(node.end, node.start, node.end, assignment.name, {start: node.left.start, end: node.left.end});
+        appendValue(node.end, node.start, node.end, state, findVariablesInNode(node.left));
         htmlize(node);
         c(node.left, state);
         c(node.right, state);
       },
       UpdateExpression: function(node, state, c) {
         var update = processUpdate(node);
-        appendValue(node.end, node.start, node.end, update.name, {start: node.argument.start, end: node.argument.end});
+        appendValue(node.end, node.start, node.end, state, update.name, {start: node.argument.start, end: node.argument.end});
         state.expressions.push(update);
         htmlize(node);
         c(node.argument, state);
@@ -282,9 +302,10 @@
       var fixedStart = this.fixPosition(start);
       var fixedEnd = this.fixPosition(end);
       var contents = string.slice(fixedStart, fixedEnd),
-          templated = template(_.extend({contents: contents}, config));
+          templated = template(_.extend({contents: "#$%^&" + contents}, config));
 
-      var index = templated.indexOf(contents);
+      var index = templated.indexOf("#$%^&" + contents);
+      templated = templated.replace("#$%^&", "");
       if(!!~index) {
         this.offsets[start] = (this.offsets[start] || 0) + index;
         this.offsets[end] = (this.offsets[end] || 0) + templated.length - (index + contents.length);
