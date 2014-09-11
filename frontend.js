@@ -122,28 +122,12 @@ $(function() {
     }
   });
 
-  // plan is to change this quite a bit, showing the variables underneath is not wholly useful.
-  // instead inlining values, showing results of branch statements etc. + detailed views like graphs
-  // per variable seem more powerful. How exactly this should look is still unknown. the sliders will
-  // probably move into the areas where loops exist, as the temporal flow of the program is already evident
-  // from the structure of the code ( could also be made more evident by function inlining later) so scrubbing
-  // through that is of questionable use. Scrubbing across different iterations of a loop inline would be nice.
+  // inlining values, showing results of branch statements etc. + detailed views like graphs
   // Also being able to change literals values could be useful for seeing whats going on.
   var CodeView = Backbone.View.extend({
     height: 700,
     initialize: function(options) {
       if(options.model) {
-        this.listenTo(options.model, "change:currentModel", function(m, model) {
-          this.$(".active").removeClass("active");
-          var start = model.get("start");
-          var end = model.get("end");
-          var $value = this.$("[data-start='" + start + "'][data-end='" + end + "']");
-
-          $value.addClass("active");
-
-          var $pre = this.$("pre");
-          $pre.scrollTop($pre.scrollTop() + ($value.offset().top - (this.height / 2)));
-        });
         this.listenTo(options.model, "change:renderedCode", this.render);
         this.listenTo(options.model, "change:peek", function(model, peek) {
            this.peek(peek, this.$el);
@@ -152,10 +136,9 @@ $(function() {
     },
     peek: function(peek, $el) {
       $el.find(".Identifier:not(.write)").each(function() {
-          var $this = $(this),
-              val = $this.data("value");
+          var $this = $(this);
           if(peek) {
-            $this.text(val);
+            $this.text($this.data("display"));
           } else {
             $this.text($this.data("name"));
           }
@@ -169,12 +152,11 @@ $(function() {
     },
     clickCall: function(e) {
       var $call = $(e.target).closest(".CallExpression");
-      var start = $call.data("start");
-      var call = _.find(model.get("timeline"), function(c) { return c.start == start;});
-      var rendered = renderValue(call.func, false, true);
-      rendered = "(" + rendered + ")";
-      var output = renderVariableValues(rendered, this.model.get("timeline"), start);
-      console.log(output);
+      var $func = $call.next(".cloned-call");
+      if(!$func.length) return;
+      $call.hide();
+      $func.show();
+      this.peek(true, $func);
     },
     scrub: function(e) {
       var $target = $(e.target),
@@ -219,7 +201,22 @@ $(function() {
         if(variable) {
           var value = table[variable.gid];
           if(value) {
+            var display = value.value,
+                className = "";
+            if(_.isFunction(display)) {
+              display = value.name;
+              className = "function"
+            } else if(_.isArray(display)) {
+              display = "[..]";
+              className = "array";
+            } else if(_.isObject(display)) {
+              display = "{..}"
+              className = "object";
+            }
+
             $element
+              .addClass(className)
+              .data("display", display)
               .data("value", value.value)
               .data("name", value.name);
           }
@@ -256,8 +253,11 @@ $(function() {
             $element.before(clone);
             expressions.splice.apply(expressions, [i, 0, clone[0]].concat(clone.find(".expression").toArray()));
           } else if(head.type == "call") {
-            var clone = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").clone();
-            clone.addClass("cloned-call");
+            var definition = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").eq(0);
+            var clone = definition.clone();
+            clone
+              .addClass("cloned-call")
+              .hide();
             $element.after(clone);
             expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
           }

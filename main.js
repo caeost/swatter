@@ -30,8 +30,8 @@
   };
 
   // templates
-  var callTemplate = _.template(";__processCall(\"<%=  name %>\",<%= name %>, <%= start %>, <%= end %>);");
-  exports.callStringRegexStart = /;__processCall\([^;]*\);/g;
+  var callTemplate = _.template("__processCall(\"<%=  name %>\",<%= name %>, <%= start %>, <%= end %>, <%= contents %>)");
+  exports.callStringRegexStart = /__processCall\([^;]*\)/g;
 
   var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= start %>, <%= end %>);");
   exports.valuesStringRegex = /;__processValue\([^;]*\);/g;
@@ -108,11 +108,12 @@
         }
         index--;
       }
-      throw new Error("could not find start of call");
+      // throw new Error("could not find start of call");
+      return content;
     };
 
     var processStartCall = function(start, end) {
-      timeline.push({temp: true, defstart: start, defend: end});
+     timeline.push({temp: true, defstart: start, defend: end});
     };
 
     var seen = {};
@@ -130,6 +131,10 @@
       object || (object = {});
       _.extend(object, {index: index});
       copiedCode = wrap.append(copiedCode, index, template, object);
+    };
+    
+    var wrapCode = function(start, end, template, config) {
+      copiedCode = wrap.wrap(copiedCode, start, end, template, config);
     };
 
     var appendValue = function(index, start, end, scope, object, position) {
@@ -227,6 +232,7 @@
 
         htmlize(node);
 
+        htmlize(node.body);
         c(node.body, newstate);
       },
       WhileStatement: function(node, state, c) {
@@ -285,7 +291,7 @@
           end: node.end,
           start: node.start
         };
-        append(node.end, object, callTemplate);
+        wrapCode(node.start, node.end, callTemplate, object);
         htmlize(node);
         c(node.callee, state);
       },
