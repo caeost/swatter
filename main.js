@@ -41,8 +41,8 @@
   var loopTemplate = _.template(";__processLoop(<%= start %>, <%= end %>);");
   exports.loopStringRegex = /;__processLoop\([^;]*\);/g;
 
-  var startCallTemplate = _.template(";__processStartCall();");
-  exports.startCallStringRegex = /;__processStartCall\(\);/g;
+  var startCallTemplate = _.template(";__processStartCall(<%= start %>, <%= end %>);");
+  exports.startCallStringRegex = /;__processStartCall\([^;]*\);/g;
 
   // node processing
   var processAssignment = function(node) {
@@ -111,8 +111,8 @@
       throw new Error("could not find start of call");
     };
 
-    var processStartCall = function() {
-      timeline.push({temp: true});
+    var processStartCall = function(start, end) {
+      timeline.push({temp: true, defstart: start, defend: end});
     };
 
     var seen = {};
@@ -214,11 +214,12 @@
         _.each(node.params, function(node) {
           node.gid = _.uniqueId("var");
           newstate.variables[node.name] = node;
+          c(node, state);
         });
 
         // generalize later
         var bodyStart = node.body.body[0].start - 1;
-        append(bodyStart, {}, startCallTemplate);
+        append(bodyStart, {start: node.start, end: node.end}, startCallTemplate);
         appendValue(bodyStart, node.start, node.end, newstate, newstate.variables);
 
         state.children.push(newstate);

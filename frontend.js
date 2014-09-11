@@ -218,17 +218,21 @@ $(function() {
         var variable = AnalyzeCode.scopeVariable(scope, name);
         if(variable) {
           var value = table[variable.gid];
-          $element
-            .data("value", value.value)
-            .data("name", value.name);
+          if(value) {
+            $element
+              .data("value", value.value)
+              .data("name", value.name);
+          }
         }
       };
 
       // timeline is now a heterogenous structure of different kinds of values
       var timeline = this.model.get("timeline").toJSON();
       var expressions = this.$(".expression");
-      expressions.each(function(i) {
-        var $element = $(this),
+
+      var i = 0;
+      while(i < expressions.length) {
+        var $element = expressions.eq(i),
             start = $element.data("start"),
             end = $element.data("end"),
             head = timeline[0];
@@ -251,6 +255,11 @@ $(function() {
               .data("iteration", head.iteration)
             $element.before(clone);
             expressions.splice.apply(expressions, [i, 0, clone[0]].concat(clone.find(".expression").toArray()));
+          } else if(head.type == "call") {
+            var clone = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").clone();
+            clone.addClass("cloned-call");
+            $element.after(clone);
+            expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
           }
         }
 
@@ -258,7 +267,8 @@ $(function() {
         if($element.is(".Identifier")) {
           handleIdentifier($element);
         }
-      });
+        i++;
+      }
     },
     render: function() {
       var code = this.model.get("renderedCode");
@@ -331,7 +341,7 @@ $(function() {
         var list = [];
         list.push(scope);
         _.each(scope.children, function(child) {
-          list.concat(buildList(child));
+          list = list.concat(buildList(child));
         });
         return list;
       };
