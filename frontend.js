@@ -151,7 +151,7 @@ $(function() {
       }
     },
     peek: function(peek, $el) {
-      $el.find(".Identifier").each(function() {
+      $el.find(".Identifier:not(.write)").each(function() {
           var $this = $(this),
               val = $this.data("value");
           if(peek) {
@@ -193,37 +193,72 @@ $(function() {
       this.peek(false, $while);
     },
     template: _.template($("#codeTemplate").text()),
+    // v 0.0000001
     markupValues: function() {
-      var cursor;
+      var cursor,
+          table = {};
 
-      // timeline is now a heterogenous structure of different kinds of values, fix
-      this.model.get("timeline").each(function(val) {
-        var start = val.get("start"),
-            end = val.get("end"),
-            type = val.get("type"),
-            // could get rid of these repeated re searches if we added cloned nodes to the list as we go
-            expressions = this.$(".expression");
+      var functions = this.model.get("functions");
+      var lookupScope = function(start, end) {
+        // speed up later, it is sorted after all
+        var possible = _.filter(functions, function(f) {
+          return f.start <= start && f.end > end;
+        });
 
-        if(type == "loop" && val.get("iteration")) {
-          var el = expressions.filter("[data-start='" + start + "'][data-end='" + end + "']").last();
-          var clone = el.clone(true);
-          clone.addClass("clone");
-          clone.hide();
-          clone.data("iteration", val.get("iteration"));
-          el.after(clone);
-        } else if(type == "value") {
-          var values = val.get("values");
-          _.each(values, function(value, name) {
-            var minimum = cursor ? expressions.slice($.inArray(cursor[0], expressions) + 1) : expressions;
-            var node = minimum.filter("[data-start='" + value.position.start + "'][data-end='" + value.position.end + "']").eq(0);
-            cursor = node;
-            if(!node.length) throw new Error("node not found for value that exists");
-            node
-              .data("value", value.value)
-              .data("name", name);
-          });
+        return possible.pop();
+      };
+
+      var handleIdentifier = function(element) {
+        var $element = $(element),
+          name = $element.text(),
+          start = $element.data("start"),
+          end = $element.data("end");
+    
+        var scope = lookupScope(start, end);
+        var variable = AnalyzeCode.scopeVariable(scope, name);
+        if(variable) {
+          var value = table[variable.gid];
+          $element
+            .data("value", value.value)
+            .data("name", value.name);
         }
-      }, this);
+      };
+
+      // timeline is now a heterogenous structure of different kinds of values
+      var timeline = this.model.get("timeline").toJSON();
+      var expressions = this.$(".expression");
+      expressions.each(function(i) {
+        var $element = $(this),
+            start = $element.data("start"),
+            end = $element.data("end"),
+            head = timeline[0];
+        
+        // this means that the marking up of expressions can diverge from the timeline
+        // but timelined expressions should always appear in html, kinda also makes sense
+        // cause why else track them?
+        if(head.start == start && head.end == end) {
+          timeline.shift();
+          // put in new values into hash
+          if(head.type == "value") {
+            _.each(head.values, function(value, gid) {
+              table[gid] = value;
+            });
+          // splice in loop bodies
+          } else if(head.type == "loop") {
+            var clone = $element.clone(true);
+            clone
+              .addClass("clone")
+              .data("iteration", head.iteration)
+            $element.before(clone);
+            expressions.splice.apply(expressions, [i, 0, clone[0]].concat(clone.find(".expression").toArray()));
+          }
+        }
+
+        // actual marking of values happens here
+        if($element.is(".Identifier")) {
+          handleIdentifier($element);
+        }
+      });
     },
     render: function() {
       var code = this.model.get("renderedCode");
@@ -234,6 +269,7 @@ $(function() {
       this.$el.html(this.template({
         code: code,
       }));
+      // fix this crap thinking everything is the wrong language
       hljs.highlightBlock(this.el);
      // this.$(".line-number").each(function(i) { 
      //   $(this).text(i + 1);
@@ -242,10 +278,16 @@ $(function() {
 
       // by this point loops are unrolled
       var loopTemplate = this.loopTemplate;
-      this.$(".WhileStatement:not(.clone), .ForStatement:not(.clone)").each(function() {
-        var $this = $(this);
+      this.$(":not(.WhileStatement) + .WhileStatement, :not(.WhileStatement) + .ForStatement").each(function() {
+        var $this = $(this),
+            start = $this.data("start"),
+            end = $this.data("end");
+
         var id = _.uniqueId("loop");
-        var allUnrolled = $this.add($this.nextUntil(":not(.clone)"));
+        var allUnrolled = $this.add($this.nextAll(".clone"));
+        // remove original
+        allUnrolled.last().next().remove();
+        allUnrolled.hide().eq(0).show();
         allUnrolled.wrapAll("<div class='loop " + id + "'>");
         $this.before(loopTemplate({id: id, max: allUnrolled.length - 1}));
       });
@@ -283,6 +325,19 @@ $(function() {
     },
     parse: function(processor) {
       processor.timeline = new Backbone.Collection(processor.timeline);
+      
+      var scope = processor.scope;
+      var buildList = function(scope) {
+        var list = [];
+        list.push(scope);
+        _.each(scope.children, function(child) {
+          list.concat(buildList(child));
+        });
+        return list;
+      };
+      var functionList = buildList(scope);
+      processor.functions = _.sortBy(functionList, "start");
+
       return processor;
     }
   });
