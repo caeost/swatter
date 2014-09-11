@@ -236,7 +236,7 @@ $(function() {
         // this means that the marking up of expressions can diverge from the timeline
         // but timelined expressions should always appear in html, kinda also makes sense
         // cause why else track them?
-        if(head.start == start && head.end == end) {
+        if(head && head.start == start && head.end == end) {
           timeline.shift();
           // put in new values into hash
           if(head.type == "value") {
