@@ -31,7 +31,7 @@
 
   // templates
   var callTemplate = _.template(";__processCall(\"<%=  name %>\",<%= name %>, <%= start %>, <%= end %>);");
-  exports.callStringRegex = /;__processCall\([^;]*\);/g;
+  exports.callStringRegexStart = /;__processCall\([^;]*\);/g;
 
   var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= start %>, <%= end %>);");
   exports.valuesStringRegex = /;__processValue\([^;]*\);/g;
@@ -40,6 +40,9 @@
 
   var loopTemplate = _.template(";__processLoop(<%= start %>, <%= end %>);");
   exports.loopStringRegex = /;__processLoop\([^;]*\);/g;
+
+  var startCallTemplate = _.template(";__processStartCall();");
+  exports.startCallStringRegex = /;__processStartCall\(\);/g;
 
   // node processing
   var processAssignment = function(node) {
@@ -94,8 +97,22 @@
       timeline.push(processed);
     };
 
-    var processCall = function(name, func, start, end) {
-      timeline.push({name: name, func: func, start: start, end: end, type: "call"});
+    var processCall = function(name, func, start, end, content) {
+      var index = timeline.length - 1;
+      while(index) {
+        var moment = timeline[index];
+        if(moment.temp) {
+          _.extend(moment, {name: name, func: func, start: start, end: end, type: "call"});
+          delete moment.temp;
+          return;
+        }
+        index--;
+      }
+      throw new Error("could not find start of call");
+    };
+
+    var processStartCall = function() {
+      timeline.push({temp: true});
     };
 
     var seen = {};
@@ -200,7 +217,9 @@
         });
 
         // generalize later
-        appendValue(node.body.body[0].start - 1, node.start, node.end, newstate, newstate.variables);
+        var bodyStart = node.body.body[0].start - 1;
+        append(bodyStart, {}, startCallTemplate);
+        appendValue(bodyStart, node.start, node.end, newstate, newstate.variables);
 
         state.children.push(newstate);
         node.state = newstate;
@@ -276,10 +295,10 @@
 
     // this needs to be moved into a web worker or something to not pollute and conflict
     try {
-      var func = new Function("__processValue", "__processCall", "__processLoop", copiedCode);
+      var func = new Function("__processValue", "__processCall", "__processLoop, __processStartCall", copiedCode);
       func = _.bind(func, {});
 
-      func(processValue, processCall, processLoop);
+      func(processValue, processCall, processLoop, processStartCall);
     } catch(e) {
       console.error(e);
     }
