@@ -3,12 +3,19 @@ $(function() {
   var $inputArea = $("#InputArea");
   var $slider = $("#slider");
 
+  var trackingStringRegex = AnalyzeCode.callStringRegexStart + "|" + AnalyzeCode.valuesStringRegex + "|" + AnalyzeCode.loopStringRegex + "|" + AnalyzeCode.startCallStringRegex;
+
+  // ACE editor
+  var editor = ace.edit("editor");
+  //editor.setTheme("ace/theme/monokai");
+  editor.getSession().setMode("ace/mode/javascript");
+
   var stringifyTransformer = function(censor) {
     return function(key, value) {
       if(key && typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
         return '[Circular]';
       }
-      return _.isFunction(value) ? value.toString().replace(AnalyzeCode.valuesStringRegex, "") : value;
+      return _.isFunction(value) ? value.toString().replace(trackingStringRegex, "") : value;
     };
   };
 
@@ -122,28 +129,12 @@ $(function() {
     }
   });
 
-  // plan is to change this quite a bit, showing the variables underneath is not wholly useful.
-  // instead inlining values, showing results of branch statements etc. + detailed views like graphs
-  // per variable seem more powerful. How exactly this should look is still unknown. the sliders will
-  // probably move into the areas where loops exist, as the temporal flow of the program is already evident
-  // from the structure of the code ( could also be made more evident by function inlining later) so scrubbing
-  // through that is of questionable use. Scrubbing across different iterations of a loop inline would be nice.
+  // inlining values, showing results of branch statements etc. + detailed views like graphs
   // Also being able to change literals values could be useful for seeing whats going on.
   var CodeView = Backbone.View.extend({
     height: 700,
     initialize: function(options) {
       if(options.model) {
-        this.listenTo(options.model, "change:currentModel", function(m, model) {
-          this.$(".active").removeClass("active");
-          var start = model.get("start");
-          var end = model.get("end");
-          var $value = this.$("[data-start='" + start + "'][data-end='" + end + "']");
-
-          $value.addClass("active");
-
-          var $pre = this.$("pre");
-          $pre.scrollTop($pre.scrollTop() + ($value.offset().top - (this.height / 2)));
-        });
         this.listenTo(options.model, "change:renderedCode", this.render);
         this.listenTo(options.model, "change:peek", function(model, peek) {
            this.peek(peek, this.$el);
@@ -152,10 +143,9 @@ $(function() {
     },
     peek: function(peek, $el) {
       $el.find(".Identifier:not(.write)").each(function() {
-          var $this = $(this),
-              val = $this.data("value");
+          var $this = $(this);
           if(peek) {
-            $this.text(val);
+            $this.text($this.data("display"));
           } else {
             $this.text($this.data("name"));
           }
@@ -169,12 +159,8 @@ $(function() {
     },
     clickCall: function(e) {
       var $call = $(e.target).closest(".CallExpression");
-      var start = $call.data("start");
-      var call = _.find(model.get("timeline"), function(c) { return c.start == start;});
-      var rendered = renderValue(call.func, false, true);
-      rendered = "(" + rendered + ")";
-      var output = renderVariableValues(rendered, this.model.get("timeline"), start);
-      console.log(output);
+      $call.toggleClass("inline-call");
+      this.peek(true, $call.find(".BlockStatement"));
     },
     scrub: function(e) {
       var $target = $(e.target),
@@ -219,7 +205,22 @@ $(function() {
         if(variable) {
           var value = table[variable.gid];
           if(value) {
+            var display = value.value,
+                className = "";
+            if(_.isFunction(display)) {
+              display = value.name;
+              className = "function"
+            } else if(_.isArray(display)) {
+              display = "[..]";
+              className = "array";
+            } else if(_.isObject(display)) {
+              display = "{..}"
+              className = "object";
+            }
+
             $element
+              .addClass(className)
+              .data("display", display)
               .data("value", value.value)
               .data("name", value.name);
           }
@@ -256,9 +257,10 @@ $(function() {
             $element.before(clone);
             expressions.splice.apply(expressions, [i, 0, clone[0]].concat(clone.find(".expression").toArray()));
           } else if(head.type == "call") {
-            var clone = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").clone();
+            var definition = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").eq(0);
+            var clone = definition.clone();
             clone.addClass("cloned-call");
-            $element.after(clone);
+            $element.append(clone);
             expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
           }
         }
@@ -357,75 +359,10 @@ $(function() {
   var codeView = new CodeView({el: $inputArea.find("#displayArea"), model: model});
   var detailView = new DetailView({el: $("#detailDisplay"), eventSource: variableView});
 
-  // very basic at this point, makes a bunch of assumptions
-  var renderVariableValues = function(text, values, index) {
-    var copy = text,
-        list = [],
-        offset = 0;
-
-    var wrap = function(string, start, end, template, config) {
-      start = start + offset;
-      end = end + offset;
-      var contents = string.slice(start, end),
-          templated = _.template(template, _.extend({contents: contents}, config));
-    
-      offset += templated.length - contents.length;
-      return string.substring(0, start) + templated + string.substring(end);
-    };
-    var lookupLast = function(position, name) {
-      var possible = values.filter(function(model) { return model.get("index") < (position - 1)}).reverse();
-      var i = 0;
-      while(i < possible.length) {
-        var model = possible[i];
-        var variable = model.get("values")[name];
-        if(variable) return renderValue(variable, false, true);
-        i++;
-      }
-      return "ERROR";
-    };
-
-    acorn.walk.recursive(acorn.parse(text), false, {
-      AssignmentExpression: function(node, state, c) { 
-        c(node.right, true);
-      },
-      UpdateExpression: function(node, state, c) {
-        c(node.argument, true);
-      },
-      FunctionExpression: function(node, state, c) {
-        c(node.body, false);
-        _.each(node.params, function(param) {
-          c(param, true);
-        });
-      },
-      VariableDeclaration: function(node, state, c) {
-        _.each(node.declarations, function(node) {
-          c(node.init, true);
-        });
-      },
-      Identifier: function(node, state, c) {
-        if(state) {
-          list.push(node);
-        }
-      }
-    });
-
-    list = _.sortBy(list, "start");
-
-    _.each(list, function(val) {
-      var start = index + val.start;
-      copy = wrap(copy, val.start, val.end, "{<%= lookupLast(start, contents) %>}", {lookupLast: lookupLast, start: start});
-    });
-    
-    return copy;
-  };
-
-  window.renderVariableValues = renderVariableValues;
-
-
   $("#SubmitButton").click(function() {
     $inputArea.addClass("ViewMode");
 
-    var text = $inputArea.find("#box").val();
+    var text = editor.getValue();
 
     var processor = new AnalyzeCode.Processor(text);
     model.set(model.parse(processor));

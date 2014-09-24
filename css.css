@@ -1,4 +1,4 @@
-#InputArea.ViewMode #box {
+#InputArea.ViewMode #editor {
   display: none;
 }
 #InputArea #displayArea {
@@ -60,7 +60,14 @@ ins {
   white-space: normal;
 }
 
-#displayArea pre {
+#displayArea pre, #editor {
   height: 700px;
+}
+
+.CallExpression > .FunctionExpression > * {
+  display: none;
+}
+.inline-call.CallExpression > .FunctionExpression > .BlockStatement {
+  display: inline;
 }
 
