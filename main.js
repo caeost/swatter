@@ -30,19 +30,20 @@
   };
 
   // templates
+  // note: Regexs are strings so they can be concatenated together to clean out all process functions at once
   var callTemplate = _.template("__processCall(\"<%=  name %>\",<%= name %>, <%= start %>, <%= end %>, <%= contents %>)");
-  exports.callStringRegexStart = /__processCall\([^;]*\)/g;
+  exports.callStringRegexStart = "__processCall\([^;]*\)";
 
   var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= start %>, <%= end %>);");
-  exports.valuesStringRegex = /;__processValue\([^;]*\);/g;
+  exports.valuesStringRegex = ";__processValue\([^;]*\);";
 
   var wrapperTemplate = _.template("<span class='<%= type %> expression' data-start='<%= start %>' data-end='<%= end %>'><%= contents %></span>");
 
   var loopTemplate = _.template(";__processLoop(<%= start %>, <%= end %>);");
-  exports.loopStringRegex = /;__processLoop\([^;]*\);/g;
+  exports.loopStringRegex = ";__processLoop\([^;]*\);";
 
   var startCallTemplate = _.template(";__processStartCall(<%= start %>, <%= end %>);");
-  exports.startCallStringRegex = /;__processStartCall\([^;]*\);/g;
+  exports.startCallStringRegex = ";__processStartCall\([^;]*\);";
 
   // node processing
   var processAssignment = function(node) {
@@ -69,7 +70,54 @@
       node: node
     }
   };
-  
+
+  // other functionality
+  var scopeVariable = exports.scopeVariable = function(scope, name) {
+    var found = false;
+    while(!found && scope) {
+      found = scope.variables[name];
+      scope = scope.parent;
+    }
+    return found;
+  };
+
+  var findVariableDefinition = function(name, state) {
+    if(state.variables[name]) {
+      return state.variables[name];
+    } else {
+      return findVariableDefinition(name, state.parent);
+    }
+  };
+
+  var findVariablesInNode = function(/* nodes */) {
+    return _.reduce(findIdentifiers.apply(this, arguments), function(memo, node) {
+      memo[node.name] = node;
+      return memo;
+    }, {});
+  };
+
+  var markIdentifiers = function(/* nodes */) {
+    _.each(findIdentifiers.apply(this, arguments), htmlize);
+  };
+
+  var findIdentifiers = function(/* nodes */) {
+    var identifiers = [];
+    _.each(arguments, function(node) {
+      acorn.walk.recursive(node, "", {
+        MemberExpression: function(node, state, c) {
+          var lookup = constructObjectReference(node.property);
+          c(node.object, lookup);
+        },
+        Identifier: function(node, state, c) {
+          if(state) node.lookup = state;
+          identifiers.push(node);
+        }
+      });
+    });
+    return identifiers;
+  };
+
+
   // entry point into functionality, "new" to use
   var Processor = exports.Processor = function(code) {
     var copiedCode = code,
@@ -122,17 +170,14 @@
       seen[hash] === void 0 ?  seen[hash] = 0 : seen[hash]++;
       timeline.push({type: "loop", start: start, end: end, iteration: seen[hash]});
     };
-  
-    var AST = acorn.parse(code, {locations: true});
 
-    var base = {children: [], expressions: [], variables: {}, parent: null, start: 0, end: code.length};
-
+    // string / code manipulation functions
     var append = function(index, object, template) {
       object || (object = {});
       _.extend(object, {index: index});
       copiedCode = wrap.append(copiedCode, index, template, object);
     };
-    
+
     var wrapCode = function(start, end, template, config) {
       copiedCode = wrap.wrap(copiedCode, start, end, template, config);
     };
@@ -160,50 +205,10 @@
       });
     };
 
-    var findVariableDefinition = function(name, state) {
-      if(state.variables[name]) {
-        return state.variables[name];
-      } else {
-        return findVariableDefinition(name, state.parent);
-      }
-    };
+    // actual processing
+    var AST = acorn.parse(code, {locations: true});
 
-    var findVariablesInNode = function(/* nodes */) {
-      return _.reduce(findIdentifiers.apply(this, arguments), function(memo, node) {
-        memo[node.name] = node;
-        return memo;
-      }, {});
-    };
-
-    var markIdentifiers = function(/* nodes */) {
-      _.each(findIdentifiers.apply(this, arguments), htmlize);
-    };
-
-    var findIdentifiers = function(/* nodes */) {
-      var identifiers = [];
-      _.each(arguments, function(node) {
-        acorn.walk.recursive(node, "", {
-          MemberExpression: function(node, state, c) {
-            var lookup = constructObjectReference(node.property);
-            c(node.object, lookup);
-          },
-          Identifier: function(node, state, c) {
-            if(state) node.lookup = state;
-            identifiers.push(node);
-          }
-        });
-      });
-      return identifiers;
-    };
-
-    var scopeVariable = exports.scopeVariable = function(scope, name) {
-      var found = false;
-      while(!found && scope) {
-        found = scope.variables[name];
-        scope = scope.parent;
-      }
-      return found;
-    };
+    var base = {children: [], expressions: [], variables: {}, parent: null, start: 0, end: code.length};
 
     acorn.walk.recursive(AST, base, {
       FunctionExpression: function(node, state, c) {

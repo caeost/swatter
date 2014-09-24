@@ -3,12 +3,19 @@ $(function() {
   var $inputArea = $("#InputArea");
   var $slider = $("#slider");
 
+  var trackingStringRegex = AnalyzeCode.callStringRegexStart + "|" + AnalyzeCode.valuesStringRegex + "|" + AnalyzeCode.loopStringRegex + "|" + AnalyzeCode.startCallStringRegex;
+
+  // ACE editor
+  var editor = ace.edit("editor");
+  //editor.setTheme("ace/theme/monokai");
+  editor.getSession().setMode("ace/mode/javascript");
+
   var stringifyTransformer = function(censor) {
     return function(key, value) {
       if(key && typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
         return '[Circular]';
       }
-      return _.isFunction(value) ? value.toString().replace(AnalyzeCode.valuesStringRegex, "") : value;
+      return _.isFunction(value) ? value.toString().replace(trackingStringRegex, "") : value;
     };
   };
 
@@ -152,11 +159,8 @@ $(function() {
     },
     clickCall: function(e) {
       var $call = $(e.target).closest(".CallExpression");
-      var $func = $call.next(".cloned-call");
-      if(!$func.length) return;
-      $call.hide();
-      $func.show();
-      this.peek(true, $func);
+      $call.toggleClass("inline-call");
+      this.peek(true, $call.find(".BlockStatement"));
     },
     scrub: function(e) {
       var $target = $(e.target),
@@ -258,7 +262,7 @@ $(function() {
             clone
               .addClass("cloned-call")
               .hide();
-            $element.after(clone);
+            $element.append(clone);
             expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
           }
         }
@@ -357,75 +361,10 @@ $(function() {
   var codeView = new CodeView({el: $inputArea.find("#displayArea"), model: model});
   var detailView = new DetailView({el: $("#detailDisplay"), eventSource: variableView});
 
-  // very basic at this point, makes a bunch of assumptions
-  var renderVariableValues = function(text, values, index) {
-    var copy = text,
-        list = [],
-        offset = 0;
-
-    var wrap = function(string, start, end, template, config) {
-      start = start + offset;
-      end = end + offset;
-      var contents = string.slice(start, end),
-          templated = _.template(template, _.extend({contents: contents}, config));
-    
-      offset += templated.length - contents.length;
-      return string.substring(0, start) + templated + string.substring(end);
-    };
-    var lookupLast = function(position, name) {
-      var possible = values.filter(function(model) { return model.get("index") < (position - 1)}).reverse();
-      var i = 0;
-      while(i < possible.length) {
-        var model = possible[i];
-        var variable = model.get("values")[name];
-        if(variable) return renderValue(variable, false, true);
-        i++;
-      }
-      return "ERROR";
-    };
-
-    acorn.walk.recursive(acorn.parse(text), false, {
-      AssignmentExpression: function(node, state, c) { 
-        c(node.right, true);
-      },
-      UpdateExpression: function(node, state, c) {
-        c(node.argument, true);
-      },
-      FunctionExpression: function(node, state, c) {
-        c(node.body, false);
-        _.each(node.params, function(param) {
-          c(param, true);
-        });
-      },
-      VariableDeclaration: function(node, state, c) {
-        _.each(node.declarations, function(node) {
-          c(node.init, true);
-        });
-      },
-      Identifier: function(node, state, c) {
-        if(state) {
-          list.push(node);
-        }
-      }
-    });
-
-    list = _.sortBy(list, "start");
-
-    _.each(list, function(val) {
-      var start = index + val.start;
-      copy = wrap(copy, val.start, val.end, "{<%= lookupLast(start, contents) %>}", {lookupLast: lookupLast, start: start});
-    });
-    
-    return copy;
-  };
-
-  window.renderVariableValues = renderVariableValues;
-
-
   $("#SubmitButton").click(function() {
     $inputArea.addClass("ViewMode");
 
-    var text = $inputArea.find("#box").val();
+    var text = editor.getValue();
 
     var processor = new AnalyzeCode.Processor(text);
     model.set(model.parse(processor));
