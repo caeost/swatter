@@ -64,7 +64,10 @@ ins {
   height: 700px;
 }
 
-.inline-call.CallExpression .BlockStatement {
-
+.CallExpression > .FunctionExpression > * {
+  display: none;
+}
+.inline-call.CallExpression > .FunctionExpression > .BlockStatement {
+  display: inline;
 }
 

@@ -259,9 +259,7 @@ $(function() {
           } else if(head.type == "call") {
             var definition = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").eq(0);
             var clone = definition.clone();
-            clone
-              .addClass("cloned-call")
-              .hide();
+            clone.addClass("cloned-call");
             $element.append(clone);
             expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
           }
