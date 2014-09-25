@@ -167,7 +167,7 @@
         if(moment.temp) {
           _.extend(moment, {name: name, func: func, start: start, end: end, type: "call"});
           delete moment.temp;
-          return;
+          return content;
         }
         index--;
       }
@@ -316,6 +316,10 @@
         wrapCode(node.start, node.end, callTemplate, object);
         htmlize(node);
         c(node.callee, state);
+
+        _.each(node.arguments, function(arg) {
+          c(arg, state);
+        });
       },
       Identifier: function(node, state, c) {
         htmlize(node);
