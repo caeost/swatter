@@ -153,6 +153,7 @@ $(function() {
     },
     events: {
       "click .CallExpression .Identifier": "clickCall",
+      "hover .object, .array": "hoverObject",
       "input .scrubber": "scrub",
       "mousedown .scrubber": "peekLoop",
       "mouseup .scrubber": "unpeekLoop"
@@ -161,6 +162,10 @@ $(function() {
       var $call = $(e.target).closest(".CallExpression");
       $call.toggleClass("inline-call");
       this.peek(true, $call.find(".BlockStatement"));
+    },
+    hoverObject: function(e) {
+      var $target = $(e.target);
+
     },
     scrub: function(e) {
       var $target = $(e.target),
@@ -253,6 +258,10 @@ $(function() {
               .data("value", value)
               .data("textdisplay", $element.text())
               .data("name", name);
+
+            if(model.get("colorVars")) {
+              $element.css("color", variable.color);
+            }
           }
         }
       };
@@ -400,6 +409,10 @@ $(function() {
 
   $("#EditButton").click(function() {
     $inputArea.removeClass("ViewMode");
+  });
+
+  $("#colorVars").change(function() {
+    model.set("colorVars", $(this).val() === "on");
   });
 });
 

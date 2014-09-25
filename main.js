@@ -117,6 +117,21 @@
     return identifiers;
   };
 
+  // for coloring values consistently
+  var colorSpace = parseInt("ffffff", 16);
+  var step = colorSpace / 20;
+  step += step / 5;
+  var stepIteration = 0;
+
+  var makeColor = function() {
+    var decimal = Math.floor(colorSpace % 1 + (step * stepIteration++));
+    var hex = decimal.toString(16);
+    while(hex.length < 6) {
+      hex = "0" + hex;
+    }
+    return hex;
+  }
+
 
   // entry point into functionality, "new" to use
   var Processor = exports.Processor = function(code) {
@@ -242,14 +257,14 @@
       },
       WhileStatement: function(node, state, c) {
         htmlize(node);
-        append(node.body.start + 1, {start: node.start, end: node.end}, loopTemplate);
+        append(node.body.start + 1, node, loopTemplate);
         c(node.test, state);
         c(node.body, state);
       },
       ForStatement: function(node, state, c) {
         htmlize(node);
         var startOfBody = node.body.start + 1;
-        append(startOfBody, {start: node.start, end: node.end}, loopTemplate);
+        append(startOfBody, node, loopTemplate);
 
         markIdentifiers(node.init, node.update, node.test);
 
@@ -264,9 +279,11 @@
         state.expressions.push(processed);
 
         _.each(node.declarations, function(node) {
-          processed.declarations[node.id.name] = {start: node.id.start, end: node.id.end};
+          processed.declarations[node.id.name] = node.id;
           node.gid = _.uniqueId("var");
           state.variables[node.id.name] = node;
+
+          node.color = makeColor();
 
           c(node.id, state);
           if(node.init) c(node.init, state);
