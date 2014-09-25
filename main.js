@@ -96,10 +96,6 @@
     }, {});
   };
 
-  var markIdentifiers = function(/* nodes */) {
-    _.each(findIdentifiers.apply(this, arguments), htmlize);
-  };
-
   var findIdentifiers = function(/* nodes */) {
     var identifiers = [];
     _.each(arguments, function(node) {
@@ -220,8 +216,12 @@
       });
     };
 
+    var markIdentifiers = function(/* nodes */) {
+      _.each(findIdentifiers.apply(this, arguments), htmlize);
+    };
+
     // actual processing
-    var AST = acorn.parse(code, {locations: true});
+    var AST = this.AST = acorn.parse(code, {locations: true});
 
     var base = {children: [], expressions: [], variables: {}, parent: null, start: 0, end: code.length};
 
@@ -268,8 +268,8 @@
 
         markIdentifiers(node.init, node.update, node.test);
 
-        // fix acorn not finding Identifiers in variable declarations
-        //appendValue(startOfBody, node.start, node.end, findVariablesInNode(node.init));
+        c(node.init, _.extend({forStatement: true}, state));
+        appendValue(startOfBody, node.start, node.end, state, findVariablesInNode(node.init));
         appendValue(startOfBody, node.start, node.end, state, findVariablesInNode(node.test));
         appendValue(startOfBody, node.start, node.end, state, findVariablesInNode(node.update));
         c(node.body, state);
@@ -288,7 +288,7 @@
           c(node.id, state);
           if(node.init) c(node.init, state);
         });
-        appendValue(node.end, node.start, node.end, state, processed.declarations);
+        if(!state || !state.forStatement) appendValue(node.end, node.start, node.end, state, processed.declarations);
         htmlize(node);
       },
       AssignmentExpression: function(node, state, c) {
@@ -341,7 +341,6 @@
 
     this.timeline = timeline;
     this.length = length;
-    this.AST = AST;
     this.transformedCode = copiedCode;
     this.code = code;
     this.renderedCode = renderedCode;
