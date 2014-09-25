@@ -142,12 +142,12 @@ $(function() {
       }
     },
     peek: function(peek, $el) {
-      $el.find(".Identifier:not(.write)").each(function() {
+      $el.find(".Identifier:not(.write), .MemberExpression:not(.write)").each(function() {
           var $this = $(this);
           if(peek) {
             $this.text($this.data("display"));
           } else {
-            $this.text($this.data("name"));
+            $this.text($this.data("textdisplay"));
           }
         });
     },
@@ -194,21 +194,46 @@ $(function() {
         return possible.pop();
       };
 
+      var followPath = function(object, path) {
+        var route = path.split("."),
+            i = 0,
+            current = object;
+        while(current && i < route.length) {
+          current = current[route[i]]
+          i++;
+        }
+        return current;
+      };
+
       var handleIdentifier = function(element) {
         var $element = $(element),
           name = $element.text(),
           start = $element.data("start"),
-          end = $element.data("end");
-    
+          end = $element.data("end"),
+          dotIndex = name.indexOf("."),
+          path;
+
+        if(!!~dotIndex) {
+          path = name.substr(dotIndex + 1);
+          name = name.substr(0, dotIndex);
+        }
+
         var scope = lookupScope(start, end);
         var variable = AnalyzeCode.scopeVariable(scope, name);
         if(variable) {
-          var value = table[variable.gid];
-          if(value) {
-            var display = value.value,
+          var valueObject = table[variable.gid];
+          if(valueObject) {
+            var value = valueObject.value,
+                display = value,
                 className = "";
+
+            if(!!~dotIndex) {
+              value = followPath(value, path);
+              display = value;
+            }
+
             if(_.isFunction(display)) {
-              display = value.name;
+              display = valueObject.name;
               className = "function"
             } else if(_.isArray(display)) {
               display = "[..]";
@@ -216,13 +241,18 @@ $(function() {
             } else if(_.isObject(display)) {
               display = "{..}"
               className = "object";
+            } else if(_.isNumber(display)) {
+              className = "number";
+            } else if(_.isString(display)) {
+              className = "string";
             }
 
             $element
               .addClass(className)
               .data("display", display)
-              .data("value", value.value)
-              .data("name", value.name);
+              .data("value", value)
+              .data("textdisplay", $element.text())
+              .data("name", name);
           }
         }
       };
@@ -266,7 +296,7 @@ $(function() {
         }
 
         // actual marking of values happens here
-        if($element.is(".Identifier")) {
+        if($element.is(".Identifier, .MemberExpression")) {
           handleIdentifier($element);
         }
         i++;

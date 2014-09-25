@@ -199,7 +199,7 @@
 
     var htmlize = function(node) {
       renderedCode = renderWrap.wrap(renderedCode, node.start, node.end, wrapperTemplate, {
-        type: node.type, 
+        type: node.type,
         end: node.end,
         start: node.start
       });
@@ -301,6 +301,9 @@
         c(node.callee, state);
       },
       Identifier: function(node, state, c) {
+        htmlize(node);
+      },
+      MemberExpression: function(node, state, c) {
         htmlize(node);
       }
     });
