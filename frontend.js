@@ -342,14 +342,15 @@ $(function() {
 
         var id = _.uniqueId("loop");
         var clones = $this.prevUntil(":not(.clone)");
-        clones
-          .hide()
-          .eq(0).show();
+        
         clones
           .wrapAll("<div class='loop " + id + "'>")
           .reverseOrder()
+          .hide()
+          // the list is reversed but the selection isn't so last == first
+          .last().show().end()
           .parent()
-          .prepend(loopTemplate({id: id, max: clones.length - 1}));
+            .prepend(loopTemplate({id: id, max: clones.length - 1}));
 
         // remove original
         $this.remove();
