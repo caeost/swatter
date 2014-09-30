@@ -5,6 +5,15 @@ $(function() {
 
   var trackingStringRegex = AnalyzeCode.callStringRegexStart + "|" + AnalyzeCode.valuesStringRegex + "|" + AnalyzeCode.loopStringRegex + "|" + AnalyzeCode.startCallStringRegex;
 
+  // http://stackoverflow.com/questions/3938099/inversing-dom-with-jquery
+  (function($) {
+    $.fn.reverseOrder = function() {
+        return this.each(function() {
+            $(this).prependTo( $(this).parent() );
+        });
+    };
+  })(jQuery);
+
   // ACE editor
   var editor = ace.edit("editor");
   //editor.setTheme("ace/theme/monokai");
@@ -176,12 +185,12 @@ $(function() {
       loopHolder.find(".ForStatement, .WhileStatement").hide().eq(value).show();
     },
     peekLoop: function(e) {
-      var $while = $(e.target).closest(".loop");
-      this.peek(true, $while);
+      var $loop = $(e.target).closest(".loop");
+      this.peek(true, $loop);
     },
     unpeekLoop: function(e) {
-      var $while = $(e.target).closest(".loop");
-      this.peek(false, $while);
+      var $loop = $(e.target).closest(".loop");
+      this.peek(false, $loop);
     },
     template: _.template($("#codeTemplate").text()),
     // v 0.0000001
@@ -320,7 +329,6 @@ $(function() {
       this.$el.html(this.template({
         code: code,
       }));
-      // fix this crap thinking everything is the wrong language
       hljs.highlightBlock(this.el);
      // this.$(".line-number").each(function(i) { 
      //   $(this).text(i + 1);
@@ -329,18 +337,22 @@ $(function() {
 
       // by this point loops are unrolled
       var loopTemplate = this.loopTemplate;
-      this.$(":not(.WhileStatement) + .WhileStatement, :not(.WhileStatement) + .ForStatement").each(function() {
-        var $this = $(this),
-            start = $this.data("start"),
-            end = $this.data("end");
+      this.$(".WhileStatement:not(.clone), .ForStatement:not(.clone)").each(function() {
+        var $this = $(this);
 
         var id = _.uniqueId("loop");
-        var allUnrolled = $this.add($this.nextAll(".clone"));
+        var clones = $this.prevUntil(":not(.clone)");
+        clones
+          .hide()
+          .eq(0).show();
+        clones
+          .wrapAll("<div class='loop " + id + "'>")
+          .reverseOrder()
+          .parent()
+          .prepend(loopTemplate({id: id, max: clones.length - 1}));
+
         // remove original
-        allUnrolled.last().next().remove();
-        allUnrolled.hide().eq(0).show();
-        allUnrolled.wrapAll("<div class='loop " + id + "'>");
-        $this.before(loopTemplate({id: id, max: allUnrolled.length - 1}));
+        $this.remove();
       });
     },
     loopTemplate: _.template("<div class='scrubber'><input type='range' value='0' max='<%= max %>' data-loop='<%= id %>'></div>")

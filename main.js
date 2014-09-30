@@ -96,10 +96,6 @@
     }, {});
   };
 
-  var markIdentifiers = function(/* nodes */) {
-    _.each(findIdentifiers.apply(this, arguments), htmlize);
-  };
-
   var findIdentifiers = function(/* nodes */) {
     var identifiers = [];
     _.each(arguments, function(node) {
@@ -204,6 +200,7 @@
         object = {};
         object[name] = position;
       }
+      if(_.isEmpty(object)) return;
       var properties = _.map(object, function(value, key) {
         var variable = scopeVariable(scope, key);
         return variable.gid + ": {value: " + key + ",position: " + JSON.stringify(value) + ", name: \"" + key + "\"}";
@@ -220,8 +217,12 @@
       });
     };
 
+    var markIdentifiers = function(/* nodes */) {
+      _.each(findIdentifiers.apply(this, arguments), htmlize);
+    };
+
     // actual processing
-    var AST = acorn.parse(code, {locations: true});
+    var AST = this.AST = acorn.parse(code);
 
     var base = {children: [], expressions: [], variables: {}, parent: null, start: 0, end: code.length};
 
@@ -257,10 +258,20 @@
       },
       WhileStatement: function(node, state, c) {
         htmlize(node);
-        append(node.body.start + 1, node, loopTemplate);
+        var startOfBody = node.body.start + 1;
+
+        append(startOfBody, node, loopTemplate);
+        appendValue(startOfBody, node.body.start, node.body.end, state, findVariablesInNode(node.test));
         c(node.test, state);
         c(node.body, state);
       },
+      BlockStatement: function(node, state, c) {
+        htmlize(node);
+        _.each(node.body, function(node) {
+          c(node, state);
+        });
+      },
+      // loop statements are complicated because we cant insert the tracking code insitu...
       ForStatement: function(node, state, c) {
         htmlize(node);
         var startOfBody = node.body.start + 1;
@@ -268,10 +279,9 @@
 
         markIdentifiers(node.init, node.update, node.test);
 
-        // fix acorn not finding Identifiers in variable declarations
-        //appendValue(startOfBody, node.start, node.end, findVariablesInNode(node.init));
-        appendValue(startOfBody, node.start, node.end, state, findVariablesInNode(node.test));
-        appendValue(startOfBody, node.start, node.end, state, findVariablesInNode(node.update));
+        c(node.init, _.extend({block: true}, state));
+        c(node.update, _.extend({block: true}, state));
+        appendValue(startOfBody, node.body.start, node.body.end, state, findVariablesInNode(node.update, node.init));
         c(node.body, state);
       },
       VariableDeclaration: function(node, state, c) {
@@ -288,7 +298,7 @@
           c(node.id, state);
           if(node.init) c(node.init, state);
         });
-        appendValue(node.end, node.start, node.end, state, processed.declarations);
+        if(!state || !state.block) appendValue(node.end, node.start, node.end, state, processed.declarations);
         htmlize(node);
       },
       AssignmentExpression: function(node, state, c) {
@@ -302,7 +312,7 @@
       },
       UpdateExpression: function(node, state, c) {
         var update = processUpdate(node);
-        appendValue(node.end, node.start, node.end, state, update.name, {start: node.argument.start, end: node.argument.end});
+        if(!state || !state.block) appendValue(node.end, node.start, node.end, state, update.name, {start: node.argument.start, end: node.argument.end});
         state.expressions.push(update);
         htmlize(node);
         c(node.argument, state);
@@ -341,7 +351,6 @@
 
     this.timeline = timeline;
     this.length = length;
-    this.AST = AST;
     this.transformedCode = copiedCode;
     this.code = code;
     this.renderedCode = renderedCode;
