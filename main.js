@@ -222,7 +222,7 @@
     };
 
     // actual processing
-    var AST = this.AST = acorn.parse(code, {locations: true});
+    var AST = this.AST = acorn.parse(code);
 
     var base = {children: [], expressions: [], variables: {}, parent: null, start: 0, end: code.length};
 
@@ -271,6 +271,7 @@
           c(node, state);
         });
       },
+      // loop statements are complicated because we cant insert the tracking code insitu...
       ForStatement: function(node, state, c) {
         htmlize(node);
         var startOfBody = node.body.start + 1;
