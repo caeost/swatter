@@ -34,8 +34,8 @@
   var callTemplate = _.template("__processCall(\"<%=  name %>\",<%= name %>, <%= start %>, <%= end %>, <%= contents %>)");
   exports.callStringRegexStart = "__processCall\([^;]*\)";
 
-  var valuesTemplate = _.template(";__processValue(<%= stringified %>, <%= start %>, <%= end %>);");
-  exports.valuesStringRegex = ";__processValue\([^;]*\);";
+  var valuesTemplate = _.template("__processValue(<%= contents %>, <%= stringified %>, <%= start %>, <%= end %>)");
+  exports.valuesStringRegex = "__processValue\([^;]*\)";
 
   var wrapperTemplate = _.template("<span class='<%= type %> expression' data-start='<%= start %>' data-end='<%= end %>'><%= contents %></span>");
 
@@ -137,23 +137,21 @@
         wrap = new Wrap(),
         renderWrap = new Wrap();
 
-    var processValue = function(object, start, end) {
+    var processValue = function(value, object, start, end) {
+      if(!_.isFunction(value) && _.isObject(value)) {
+        value = lodash.cloneDeep(value);
+      }
+
       var processed = {
+        value: value,
         type: "value",
         start: start,
         end: end
       };
 
-      processed.values = _.reduce(object, function(memo, value, key) {
-        if(!_.isFunction(value) && _.isObject(value)) {
-          value = lodash.cloneDeep(value);
-        }
-        // might need to save the explicit position as right now only the expressions position is saved
-        memo[key] = value;
-        return memo;
-      }, {});
-
       timeline.push(processed);
+
+      return value;
     };
 
     var processCall = function(name, func, start, end, content) {
@@ -193,20 +191,19 @@
       copiedCode = wrap.wrap(copiedCode, start, end, template, config);
     };
 
-    var appendValue = function(index, start, end, scope, object, position) {
-      var stringified = "";
-      if(!_.isObject(object)) {
-        var name = object;
-        object = {};
-        object[name] = position;
-      }
+    var wrapValue = function(start, end, scope, name, position) {
       if(_.isEmpty(object)) return;
-      var properties = _.map(object, function(value, key) {
-        var variable = scopeVariable(scope, key);
-        return variable.gid + ": {value: " + key + ",position: " + JSON.stringify(value) + ", name: \"" + key + "\"}";
-      });
-      stringified = "{" + properties.join(",") + "}";
-      append(index, {stringified: stringified, start: start, end: end}, valuesTemplate);
+
+      var stringified = "";
+
+      if(!position) {
+        position = {start: start, end: end};
+      }
+
+      var variable = scopeVariable(scope, name);
+
+      stringified = "{" + variable.gid + ": {position: " + JSON.stringify(position) + ", name: \"" + name + "\"}" + "}";
+      wrapCode(start, end, valuesTemplate, {stringified: stringified, start: start, end: end});
     };
 
     var htmlize = function(node) {
@@ -246,7 +243,7 @@
         // generalize later
         var bodyStart = node.body.body[0].start - 1;
         append(bodyStart, {start: node.start, end: node.end}, startCallTemplate);
-        appendValue(bodyStart, node.start, node.end, newstate, newstate.variables);
+        wrapValue(node.start, node.end, newstate, newstate.variables);
 
         state.children.push(newstate);
         node.state = newstate;
@@ -261,7 +258,6 @@
         var startOfBody = node.body.start + 1;
 
         append(startOfBody, node, loopTemplate);
-        appendValue(startOfBody, node.body.start, node.body.end, state, findVariablesInNode(node.test));
         c(node.test, state);
         c(node.body, state);
       },
@@ -279,9 +275,9 @@
 
         markIdentifiers(node.init, node.update, node.test);
 
-        c(node.init, _.extend({block: true}, state));
-        c(node.update, _.extend({block: true}, state));
-        appendValue(startOfBody, node.body.start, node.body.end, state, findVariablesInNode(node.update, node.init));
+        c(node.init, state);
+        c(node.test, state);
+        c(node.update, state);
         c(node.body, state);
       },
       VariableDeclaration: function(node, state, c) {
@@ -294,25 +290,29 @@
           state.variables[node.id.name] = node;
 
           node.color = makeColor();
+          
+          var passIn = {};
+          passIn[node.id.name] = node;
+
+          wrapValue(node.init.start, node.init.end, state, passIn);
 
           c(node.id, state);
           if(node.init) c(node.init, state);
         });
-        if(!state || !state.block) appendValue(node.end, node.start, node.end, state, processed.declarations);
         htmlize(node);
       },
       AssignmentExpression: function(node, state, c) {
         // todo: need to track undeclared variables as they become globals
         var assignment = processAssignment(node);
         state.expressions.push(assignment);
-        appendValue(node.end, node.start, node.end, state, findVariablesInNode(node.left));
+        wrapValue(node.start, node.end, state, findVariablesInNode(node.left));
         htmlize(node);
         c(node.left, state);
         c(node.right, state);
       },
       UpdateExpression: function(node, state, c) {
         var update = processUpdate(node);
-        if(!state || !state.block) appendValue(node.end, node.start, node.end, state, update.name, {start: node.argument.start, end: node.argument.end});
+        wrapValue(node.start, node.end, state, update.name);
         state.expressions.push(update);
         htmlize(node);
         c(node.argument, state);
