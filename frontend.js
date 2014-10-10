@@ -304,12 +304,25 @@ $(function() {
               .data("iteration", head.iteration)
             $element.before(clone);
             expressions.splice.apply(expressions, [i, 0, clone[0]].concat(clone.find(".expression").toArray()));
-          } else if(head.type == "call") {
+          } else if(head.type == "call" || head.type == "new") {
             var definition = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").eq(0);
             var clone = definition.clone();
             clone.addClass("cloned-call");
             $element.append(clone);
             expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
+            if(head.type == "new") {
+              // figure this out
+            }
+          } else if(head.type == "iftest") {
+            var className = head.className;
+            if(head.result) {
+              $element.find(".consequent." + className).addClass("selected");
+            } else {
+              var $alternate = $element.find(".alternate." + className);
+              if(!$alternate.is(".IfStatement")) {
+                $alternate.addClass("selected");
+              }
+            }
           }
         }
 

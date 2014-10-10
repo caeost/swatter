@@ -71,3 +71,21 @@ ins {
   display: inline;
 }
 
+.IfStatement .consequent {
+  opacity: .5;
+}
+.IfStatement .alternate {
+  opacity: .5;
+}
+.IfStatement .selected.consequent {
+  opacity: 1;
+}
+.IfStatement .selected.alternate {
+  opacity: 1;
+}
+.IfStatement .IfStatement.consequent {
+  opacity: 1;
+}
+.IfStatement .IfStatement.alternate {
+  opacity: 1;
+}
