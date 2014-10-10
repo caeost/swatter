@@ -42,8 +42,10 @@
   var loopTemplate = _.template(";__processLoop(<%= start %>, <%= end %>);");
   exports.loopStringRegex = ";__processLoop\([^;]*\);";
 
-  var startCallTemplate = _.template(";__processStartCall(<%= start %>, <%= end %>);");
+  var startCallTemplate = _.template(";__processStartCall(<%= start %>, <%= end %>, this);");
   exports.startCallStringRegex = ";__processStartCall\([^;]*\);";
+
+  var testTemplate = _.template("__processTest(<%= start %>, <%= end %>, \"<%= className %>\", <%= contents %>)");
 
   // node processing
   var processAssignment = function(node) {
@@ -156,12 +158,12 @@
       timeline.push(processed);
     };
 
-    var processCall = function(name, func, start, end, content) {
+    var processCall = function(name, func, start, end, content, type) {
       var index = timeline.length - 1;
       while(index) {
         var moment = timeline[index];
         if(moment.temp) {
-          _.extend(moment, {name: name, func: func, start: start, end: end, type: "call"});
+          _.extend(moment, {name: name, func: func, start: start, end: end, type: type || "call"});
           delete moment.temp;
           return content;
         }
@@ -171,8 +173,13 @@
       return content;
     };
 
-    var processStartCall = function(start, end) {
-     timeline.push({temp: true, defstart: start, defend: end});
+    var processStartCall = function(start, end, that) {
+     timeline.push({temp: true, defstart: start, defend: end, that: that});
+    };
+
+    var processTest = function(start, end, className, result) {
+      timeline.push({type: "iftest", start: start, end: end, className: className, result: result});
+      return result;
     };
 
     var seen = {};
@@ -184,7 +191,12 @@
 
     // string / code manipulation functions
     var append = function(index, object, template) {
-      object || (object = {});
+      if(!template) {
+        template = object;
+        object = {};
+      } else if(!object) {
+        object = {};
+      }
       _.extend(object, {index: index});
       copiedCode = wrap.append(copiedCode, index, template, object);
     };
@@ -202,16 +214,22 @@
       }
       if(_.isEmpty(object)) return;
       var properties = _.map(object, function(value, key) {
-        var variable = scopeVariable(scope, key);
-        return variable.gid + ": {value: " + key + ",position: " + JSON.stringify(value) + ", name: \"" + key + "\"}";
+        var name,
+            variable = scopeVariable(scope, key);
+        if(variable) {
+          name = variable.gid;
+        } else {
+          throw new Error("cannot find variable in scope");
+        }
+        return name + ": {value: " + key + ",position: " + JSON.stringify(value) + ", name: \"" + key + "\"}";
       });
       stringified = "{" + properties.join(",") + "}";
       append(index, {stringified: stringified, start: start, end: end}, valuesTemplate);
     };
 
-    var htmlize = function(node) {
+    var htmlize = function(node, extraType) {
       renderedCode = renderWrap.wrap(renderedCode, node.start, node.end, wrapperTemplate, {
-        type: node.type,
+        type: node.type + (extraType ? " " + extraType  : ""),
         end: node.end,
         start: node.start
       });
@@ -285,6 +303,7 @@
         c(node.body, state);
       },
       VariableDeclaration: function(node, state, c) {
+        htmlize(node);
         var processed = processDeclaration(node);
         state.expressions.push(processed);
 
@@ -299,39 +318,76 @@
           if(node.init) c(node.init, state);
         });
         if(!state || !state.block) appendValue(node.end, node.start, node.end, state, processed.declarations);
-        htmlize(node);
       },
       AssignmentExpression: function(node, state, c) {
+        htmlize(node);
         // todo: need to track undeclared variables as they become globals
         var assignment = processAssignment(node);
         state.expressions.push(assignment);
-        appendValue(node.end, node.start, node.end, state, findVariablesInNode(node.left));
-        htmlize(node);
         c(node.left, state);
         c(node.right, state);
+        appendValue(node.end, node.start, node.end, state, findVariablesInNode(node.left));
       },
       UpdateExpression: function(node, state, c) {
+        htmlize(node);
         var update = processUpdate(node);
         if(!state || !state.block) appendValue(node.end, node.start, node.end, state, update.name, {start: node.argument.start, end: node.argument.end});
         state.expressions.push(update);
-        htmlize(node);
         c(node.argument, state);
       },
       CallExpression: function(node, state, c) {
+        htmlize(node);
         var object = {
-          name: node.callee.name,
+          name: constructObjectReference(node.callee),
           end: node.end,
           start: node.start
         };
         wrapCode(node.start, node.end, callTemplate, object);
-        htmlize(node);
         c(node.callee, state);
 
         _.each(node.arguments, function(arg) {
           c(arg, state);
         });
       },
+      NewExpression: function(node, state, c) {
+        htmlize(node);
+        var object = {
+          name: constructObjectReference(node.callee),
+          end: node.end,
+          start: node.start
+        };
+        wrapCode(node.start, node.end, callTemplate, object, "new");
+        c(node.callee, state);
+
+        _.each(node.arguments, function(arg) {
+          c(arg, state);
+        });
+      },
+      IfStatement: function(node, state, c) {
+        htmlize(node);
+        var test = node.test,
+            className = _.uniqueId("IfStatement");
+        wrapCode(test.start, test.end, testTemplate, {start: node.start, end: node.end, className: className});
+        htmlize(node.consequent, "consequent " + className);
+        c(test, state);
+        c(node.consequent, state);
+        if(node.alternate) {
+          htmlize(node.alternate, "alternate " + className);
+          c(node.alternate, state);
+        }
+      },
       Identifier: function(node, state, c) {
+        if(!scopeVariable(state, node.name)) {
+          // this is messed up because its a different "this" each time in new objects hmm
+          if(node.name === "this") {
+            node.gid = _.uniqueId("this");
+          } else {
+            node.global = true;
+            node.gid = _.uniqueId("global");
+            base.variables[node.name] = node;
+          }
+          node.color = makeColor();
+        }
         htmlize(node);
       },
       MemberExpression: function(node, state, c) {
@@ -341,10 +397,10 @@
 
     // this needs to be moved into a web worker or something to not pollute and conflict
     try {
-      var func = new Function("__processValue", "__processCall", "__processLoop, __processStartCall", copiedCode);
+      var func = new Function("__processValue", "__processCall", "__processLoop, __processStartCall", "__processTest", copiedCode);
       func = _.bind(func, {});
 
-      func(processValue, processCall, processLoop, processStartCall);
+      func(processValue, processCall, processLoop, processStartCall, processTest);
     } catch(e) {
       console.error(e);
     }
