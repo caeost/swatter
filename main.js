@@ -45,6 +45,8 @@
   var startCallTemplate = _.template(";__processStartCall(<%= start %>, <%= end %>);");
   exports.startCallStringRegex = ";__processStartCall\([^;]*\);";
 
+  var thisTemplate = _.template(";_processThis(this);");
+
   // node processing
   var processAssignment = function(node) {
     var name;
@@ -182,9 +184,21 @@
       timeline.push({type: "loop", start: start, end: end, iteration: seen[hash]});
     };
 
+    var processThis = function(that) {
+      timeline.push({ 
+        type: "value",
+        values: {"this": that}
+      });
+    };
+
     // string / code manipulation functions
     var append = function(index, object, template) {
-      object || (object = {});
+      if(!template) {
+        template = object;
+        object = {};
+      } else if(!object) {
+        object = {};
+      }
       _.extend(object, {index: index});
       copiedCode = wrap.append(copiedCode, index, template, object);
     };
@@ -202,8 +216,15 @@
       }
       if(_.isEmpty(object)) return;
       var properties = _.map(object, function(value, key) {
-        var variable = scopeVariable(scope, key);
-        return variable.gid + ": {value: " + key + ",position: " + JSON.stringify(value) + ", name: \"" + key + "\"}";
+        var name,
+            variable = scopeVariable(scope, key);
+        if(variable) {
+          name = variable.gid;
+        } else {
+          // variable must be global or "this" (this is kinda a faux global)
+          name = "global_" + key;
+        }
+        return name + ": {value: " + key + ",position: " + JSON.stringify(value) + ", name: \"" + key + "\"}";
       });
       stringified = "{" + properties.join(",") + "}";
       append(index, {stringified: stringified, start: start, end: end}, valuesTemplate);
@@ -246,6 +267,7 @@
         // generalize later
         var bodyStart = node.body.body[0].start - 1;
         append(bodyStart, {start: node.start, end: node.end}, startCallTemplate);
+        append(bodyStart, thisTemplate);
         appendValue(bodyStart, node.start, node.end, newstate, newstate.variables);
 
         state.children.push(newstate);
@@ -341,10 +363,10 @@
 
     // this needs to be moved into a web worker or something to not pollute and conflict
     try {
-      var func = new Function("__processValue", "__processCall", "__processLoop, __processStartCall", copiedCode);
+      var func = new Function("__processValue", "__processCall", "__processLoop, __processStartCall", "_processThis", copiedCode);
       func = _.bind(func, {});
 
-      func(processValue, processCall, processLoop, processStartCall);
+      func(processValue, processCall, processLoop, processStartCall, processThis);
     } catch(e) {
       console.error(e);
     }
