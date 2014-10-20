@@ -89,3 +89,7 @@ ins {
 .IfStatement .IfStatement.alternate {
   opacity: 1;
 }
+
+.scrubber input {
+  width: 150px;
+}
