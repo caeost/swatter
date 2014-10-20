@@ -29,6 +29,7 @@ $(function() {
   };
 
   // returns back an htmlized version of value for viewing
+  // todo: improve rendering of literals, wrapping strings etc, so that they can get nicely colored and stuff
   var renderValue = function(value, prevVariable, raw) {
     var result = value;
     if(_.isFunction(value)) {
