@@ -29,6 +29,7 @@ $(function() {
   };
 
   // returns back an htmlized version of value for viewing
+  // todo: improve rendering of literals, wrapping strings etc, so that they can get nicely colored and stuff
   var renderValue = function(value, prevVariable, raw) {
     var result = value;
     if(_.isFunction(value)) {
@@ -144,7 +145,7 @@ $(function() {
     height: 700,
     initialize: function(options) {
       if(options.model) {
-        this.listenTo(options.model, "change:renderedCode", this.render);
+        this.listenTo(options.model, "change:renderedCode change:colorVars", this.render);
         this.listenTo(options.model, "change:peek", function(model, peek) {
            this.peek(peek, this.$el);
         });
@@ -438,7 +439,7 @@ $(function() {
   });
 
   $("#colorVars").change(function() {
-    model.set("colorVars", $(this).val() === "on");
+    model.set("colorVars", $(this).prop("checked"));
   });
 });
 
