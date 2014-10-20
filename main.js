@@ -335,6 +335,7 @@
         state.expressions.push(update);
         c(node.argument, state);
       },
+      // todo: built in functions are somehow getting the defstart / defend of parent functions, fix that
       CallExpression: function(node, state, c) {
         htmlize(node);
         var object = {
