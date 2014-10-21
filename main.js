@@ -280,7 +280,7 @@
 
         append(startOfBody, node, loopTemplate);
         appendValue(startOfBody, node.body.start, node.body.end, state, findVariablesInNode(node.test));
-        c(node.test, state);
+        c(node.test, _.extend({block: true}, state));
         c(node.body, state);
       },
       BlockStatement: function(node, state, c) {
@@ -331,7 +331,11 @@
       UpdateExpression: function(node, state, c) {
         htmlize(node);
         var update = processUpdate(node);
-        if(!state || !state.block) appendValue(node.end, node.start, node.end, state, update.name, {start: node.argument.start, end: node.argument.end});
+        if(!state || !state.block)  {
+          appendValue(node.end, node.start, node.end, state, update.name, {start: node.argument.start, end: node.argument.end});
+        } else {
+          //wrapValue(node.start, node.end, state, update.name, node.argument);
+        }
         state.expressions.push(update);
         c(node.argument, state);
       },
@@ -392,6 +396,9 @@
         htmlize(node);
       },
       MemberExpression: function(node, state, c) {
+        htmlize(node);
+      },
+      Literal: function(node, state, c) {
         htmlize(node);
       }
     });

@@ -139,6 +139,11 @@ $(function() {
     }
   });
 
+  var transformUnderlyingCode = function(start, end, fresh) {
+    var text = editor.getValue();
+    editor.setValue(text.slice(0, start) + fresh + text.slice(end));
+  };
+
   // inlining values, showing results of branch statements etc. + detailed views like graphs
   // Also being able to change literals values could be useful for seeing whats going on.
   var CodeView = Backbone.View.extend({
@@ -166,7 +171,8 @@ $(function() {
       "hover .object, .array": "hoverObject",
       "input .scrubber": "scrub",
       "mousedown .scrubber": "peekLoop",
-      "mouseup .scrubber": "unpeekLoop"
+      "mouseup .scrubber": "unpeekLoop",
+      "click .Literal": "modifyLiteral"
     },
     clickCall: function(e) {
       var $call = $(e.target).closest(".CallExpression");
@@ -192,6 +198,18 @@ $(function() {
     unpeekLoop: function(e) {
       var $loop = $(e.target).closest(".loop");
       this.peek(false, $loop);
+    },
+    modifyLiteral: function(e) {
+      var $literal = $(e.currentTarget);
+      var value = $literal.text();
+      var data = $literal.data();
+      if(value === "true" || value === "false") {
+        value = value === "true";
+        transformUnderlyingCode(data.start, data.end, !value);
+      } else if(!_.isNaN(+value)) {
+        transformUnderlyingCode(data.start, data.end, +value + 1);
+      }
+      $("#SubmitButton").click();
     },
     template: _.template($("#codeTemplate").text()),
     // v 0.0000001
@@ -297,6 +315,9 @@ $(function() {
             _.each(head.values, function(value, gid) {
               table[gid] = value;
             });
+          // maybe make all these different sub parts seperate views, marking them up in one loop over with information and
+          // then instantiating views in the correct places, problem is temporal nature of loops and stuff..
+
           // splice in loop bodies
           } else if(head.type == "loop") {
             var clone = $element.clone(true);
@@ -307,12 +328,14 @@ $(function() {
             expressions.splice.apply(expressions, [i, 0, clone[0]].concat(clone.find(".expression").toArray()));
           } else if(head.type == "call" || head.type == "new") {
             var definition = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").eq(0);
-            var clone = definition.clone();
-            clone.addClass("cloned-call");
-            $element.append(clone);
-            expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
-            if(head.type == "new") {
-              // figure this out
+            if(definition.length) {
+              var clone = definition.clone();
+              clone.addClass("cloned-call");
+              $element.append(clone);
+              expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
+              if(head.type == "new") {
+                // figure this out
+              }
             }
           } else if(head.type == "iftest") {
             var className = head.className;
@@ -332,6 +355,9 @@ $(function() {
           handleIdentifier($element);
         }
         i++;
+      }
+      if(timeline.length) {
+        console.warn("There are still events left in timeline after processing is finished", timeline);
       }
     },
     render: function() {
@@ -369,6 +395,12 @@ $(function() {
         // remove original
         $this.remove();
       });
+
+      // this is way too looong
+      var peek = this.model.get("peek");
+      if(peek) {
+        this.peek(peek, this.$el);
+      }
     },
     loopTemplate: _.template("<div class='scrubber'><input type='range' value='0' max='<%= max %>' data-loop='<%= id %>'></div>")
   });
