@@ -5,6 +5,14 @@
   mod(this.AnalyzeCode = {}); // Plain browser env
 })(function(exports) {
 
+  // new idea: rewrite this pretty heavily to provide results of values into the AST
+  // AST becomes modified in loops / function calls to provide all the different iterations etc
+  // can pass this as standardized object to rendering then. but in order to in future make other
+  // languages work easier we should eventually figure out what we really do need out of the AST
+  // As part of this: do depth first processing of graph in order to find out text belonging to that node and not
+  // to contained nodes. Reconstruction of code is then facile
+  // Also should create some kindaway to search in and traverse this tree structure later
+  //
   // utility
   var constructObjectReference = function(node) {
     var string = "";
@@ -262,7 +270,7 @@
         });
 
         // generalize later
-        var bodyStart = node.body.body[0].start - 1;
+        var bodyStart = node.body.start + 1;
         append(bodyStart, {start: node.start, end: node.end}, startCallTemplate);
         appendValue(bodyStart, node.start, node.end, newstate, newstate.variables);
 

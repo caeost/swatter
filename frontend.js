@@ -14,11 +14,6 @@ $(function() {
     };
   })(jQuery);
 
-  // ACE editor
-  var editor = ace.edit("editor");
-  //editor.setTheme("ace/theme/monokai");
-  editor.getSession().setMode("ace/mode/javascript");
-
   var stringifyTransformer = function(censor) {
     return function(key, value) {
       if(key && typeof(censor) === 'object' && typeof(value) == 'object' && censor === value) {
@@ -49,6 +44,7 @@ $(function() {
     return result;
   };
 
+  // unused right now
   var DetailView = Backbone.View.extend({
     initialize: function(options) {
       // eventsource could become an array
@@ -85,6 +81,7 @@ $(function() {
     }
   });
 
+  // unused right now
   var VariableView = Backbone.View.extend({
     initialize: function(options) {
       options || (options = {});
@@ -139,271 +136,6 @@ $(function() {
     }
   });
 
-  var transformUnderlyingCode = function(start, end, fresh) {
-    var text = editor.getValue();
-    editor.setValue(text.slice(0, start) + fresh + text.slice(end));
-  };
-
-  // inlining values, showing results of branch statements etc. + detailed views like graphs
-  // Also being able to change literals values could be useful for seeing whats going on.
-  var CodeView = Backbone.View.extend({
-    height: 700,
-    initialize: function(options) {
-      if(options.model) {
-        this.listenTo(options.model, "change:renderedCode change:colorVars", this.render);
-        this.listenTo(options.model, "change:peek", function(model, peek) {
-           this.peek(peek, this.$el);
-        });
-      }
-    },
-    peek: function(peek, $el) {
-      $el.find(".Identifier:not(.write), .MemberExpression:not(.write)").each(function() {
-          var $this = $(this);
-          if(peek) {
-            $this.text($this.data("display"));
-          } else {
-            $this.text($this.data("textdisplay"));
-          }
-        });
-    },
-    events: {
-      "click .CallExpression .Identifier": "clickCall",
-      "hover .object, .array": "hoverObject",
-      "input .scrubber": "scrub",
-      "mousedown .scrubber": "peekLoop",
-      "mouseup .scrubber": "unpeekLoop",
-      "click .Literal": "modifyLiteral"
-    },
-    clickCall: function(e) {
-      var $call = $(e.target).closest(".CallExpression");
-      $call.toggleClass("inline-call");
-      this.peek(true, $call.find(".BlockStatement"));
-    },
-    hoverObject: function(e) {
-      var $target = $(e.target);
-
-    },
-    scrub: function(e) {
-      var $target = $(e.target),
-          className = $target.data("loop"),
-          value = +$target.val();
-
-      var loopHolder = this.$(".loop." + className);
-      loopHolder.find(".ForStatement, .WhileStatement").hide().eq(value).show();
-    },
-    peekLoop: function(e) {
-      var $loop = $(e.target).closest(".loop");
-      this.peek(true, $loop);
-    },
-    unpeekLoop: function(e) {
-      var $loop = $(e.target).closest(".loop");
-      this.peek(false, $loop);
-    },
-    modifyLiteral: function(e) {
-      var $literal = $(e.currentTarget);
-      var value = $literal.text();
-      var data = $literal.data();
-      if(value === "true" || value === "false") {
-        value = value === "true";
-        transformUnderlyingCode(data.start, data.end, !value);
-      } else if(!_.isNaN(+value)) {
-        transformUnderlyingCode(data.start, data.end, +value + 1);
-      }
-      $("#SubmitButton").click();
-    },
-    template: _.template($("#codeTemplate").text()),
-    // v 0.0000001
-    markupValues: function() {
-      var cursor,
-          table = {};
-
-      var functions = this.model.get("functions");
-      var lookupScope = function(start, end) {
-        // speed up later, it is sorted after all
-        var possible = _.filter(functions, function(f) {
-          return f.start <= start && f.end > end;
-        });
-
-        return possible.pop();
-      };
-
-      var followPath = function(object, path) {
-        var route = path.split("."),
-            i = 0,
-            current = object;
-        while(current && i < route.length) {
-          current = current[route[i]]
-          i++;
-        }
-        return current;
-      };
-
-      var handleIdentifier = function(element) {
-        var $element = $(element),
-          name = $element.text(),
-          start = $element.data("start"),
-          end = $element.data("end"),
-          dotIndex = name.indexOf("."),
-          path;
-
-        if(!!~dotIndex) {
-          path = name.substr(dotIndex + 1);
-          name = name.substr(0, dotIndex);
-        }
-
-        var scope = lookupScope(start, end);
-        var variable = AnalyzeCode.scopeVariable(scope, name);
-        if(variable) {
-          var valueObject = table[variable.gid];
-          if(valueObject) {
-            var value = valueObject.value,
-                display = value,
-                className = "";
-
-            if(!!~dotIndex) {
-              value = followPath(value, path);
-              display = value;
-            }
-
-            if(_.isFunction(display)) {
-              display = valueObject.name;
-              className = "function"
-            } else if(_.isArray(display)) {
-              display = "[..]";
-              className = "array";
-            } else if(_.isObject(display)) {
-              display = "{..}"
-              className = "object";
-            } else if(_.isNumber(display)) {
-              className = "number";
-            } else if(_.isString(display)) {
-              className = "string";
-            }
-
-            $element
-              .addClass(className)
-              .data("display", display)
-              .data("value", value)
-              .data("textdisplay", $element.text())
-              .data("name", name);
-
-            if(model.get("colorVars")) {
-              $element.css("color", variable.color);
-            }
-          }
-        }
-      };
-
-      // timeline is now a heterogenous structure of different kinds of values
-      var timeline = this.model.get("timeline").toJSON();
-      var expressions = this.$(".expression");
-
-      var i = 0;
-      while(i < expressions.length) {
-        var $element = expressions.eq(i),
-            start = $element.data("start"),
-            end = $element.data("end"),
-            head = timeline[0];
-        
-        // this means that the marking up of expressions can diverge from the timeline
-        // but timelined expressions should always appear in html, kinda also makes sense
-        // cause why else track them?
-        if(head && head.start == start && head.end == end) {
-          timeline.shift();
-          // put in new values into hash
-          if(head.type == "value") {
-            _.each(head.values, function(value, gid) {
-              table[gid] = value;
-            });
-          // maybe make all these different sub parts seperate views, marking them up in one loop over with information and
-          // then instantiating views in the correct places, problem is temporal nature of loops and stuff..
-
-          // splice in loop bodies
-          } else if(head.type == "loop") {
-            var clone = $element.clone(true);
-            clone
-              .addClass("clone")
-              .data("iteration", head.iteration)
-            $element.before(clone);
-            expressions.splice.apply(expressions, [i, 0, clone[0]].concat(clone.find(".expression").toArray()));
-          } else if(head.type == "call" || head.type == "new") {
-            var definition = expressions.filter("[data-start='" + head.defstart + "'][data-end='" + head.defend + "']").eq(0);
-            if(definition.length) {
-              var clone = definition.clone();
-              clone.addClass("cloned-call");
-              $element.append(clone);
-              expressions.splice.apply(expressions, [i + 1, 0, clone[0]].concat(clone.find(".expression").toArray()));
-              if(head.type == "new") {
-                // figure this out
-              }
-            }
-          } else if(head.type == "iftest") {
-            var className = head.className;
-            if(head.result) {
-              $element.find(".consequent." + className).addClass("selected");
-            } else {
-              var $alternate = $element.find(".alternate." + className);
-              if(!$alternate.is(".IfStatement")) {
-                $alternate.addClass("selected");
-              }
-            }
-          }
-        }
-
-        // actual marking of values happens here
-        if($element.is(".Identifier, .MemberExpression")) {
-          handleIdentifier($element);
-        }
-        i++;
-      }
-      if(timeline.length) {
-        console.warn("There are still events left in timeline after processing is finished", timeline);
-      }
-    },
-    render: function() {
-      var code = this.model.get("renderedCode");
-      // no line numbers for right now cause i cant decide what to do
-      // kinda gnarls
-      //code = code.replace(/\n/g, "\n<span class='line-number'></span>");
-      //code = "<span class='line-number'></span>" + code;
-      this.$el.html(this.template({
-        code: code,
-      }));
-      hljs.highlightBlock(this.el);
-     // this.$(".line-number").each(function(i) { 
-     //   $(this).text(i + 1);
-     // });
-      this.markupValues();
-
-      // by this point loops are unrolled
-      var loopTemplate = this.loopTemplate;
-      this.$(".WhileStatement:not(.clone), .ForStatement:not(.clone)").each(function() {
-        var $this = $(this);
-
-        var id = _.uniqueId("loop");
-        var clones = $this.prevUntil(":not(.clone)");
-        
-        clones
-          .wrapAll("<div class='loop " + id + "'>")
-          .reverseOrder()
-          .hide()
-          // the list is reversed but the selection isn't so last == first
-          .last().show().end()
-          .parent()
-            .prepend(loopTemplate({id: id, max: clones.length - 1}));
-
-        // remove original
-        $this.remove();
-      });
-
-      // this is way too looong
-      var peek = this.model.get("peek");
-      if(peek) {
-        this.peek(peek, this.$el);
-      }
-    },
-    loopTemplate: _.template("<div class='scrubber'><input type='range' value='0' max='<%= max %>' data-loop='<%= id %>'></div>")
-  });
 
   var Model = Backbone.Model.extend({
     initialize: function() {
@@ -434,8 +166,10 @@ $(function() {
       return variables;
     },
     parse: function(processor) {
-      processor.timeline = new Backbone.Collection(processor.timeline);
-      
+      this.get('timeline').reset(processor.timeline);
+
+      delete processor['timeline'];
+
       var scope = processor.scope;
       var buildList = function(scope) {
         var list = [];
@@ -452,18 +186,34 @@ $(function() {
     }
   });
 
-  var model = window.model = new Model(); 
-  var variableView = new VariableView({model: model.get("state"), collection: model.get("values"), el: variables});
-  var codeView = new CodeView({el: $inputArea.find("#displayArea"), model: model});
-  var detailView = new DetailView({el: $("#detailDisplay"), eventSource: variableView});
-
-  $("#SubmitButton").click(function() {
-    $inputArea.addClass("ViewMode");
-
+  // ACE editor
+  var editor = ace.edit("editor");
+  //editor.setTheme("ace/theme/monokai");
+  editor.getSession().setMode("ace/mode/javascript");
+  editor.on('change', _.debounce(function() {
     var text = editor.getValue();
 
     var processor = new AnalyzeCode.Processor(text);
     model.set(model.parse(processor));
+
+    // debugging
+    console.log(model.get('timeline').toJSON());
+
+    window.localStorage.editorValue = text;
+  }, 100));
+
+  if(window.localStorage.editorValue) {
+    editor.setValue(window.localStorage.editorValue);
+  }
+
+  var model = window.model = new Model(); 
+  var codeView = new CodeView({
+    el: $inputArea.find("#displayArea"), 
+    model: model
+  });
+
+  $("#SubmitButton").click(function() {
+    $inputArea.addClass("ViewMode");
   });
 
   $("#EditButton").click(function() {
